@@ -23,6 +23,7 @@ gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
 claude_dir="/home/pdostal/.claude"
 claude_json="/home/pdostal/.claude.json"
 gh_config="/home/pdostal/.config/gh"
+ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 
 args=(
@@ -84,6 +85,18 @@ if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   args+=(-e SSH_AUTH_SOCK)
 else
   echo "✗ SSH agent socket not available" >&2
+fi
+
+# SSH known_hosts
+if [[ -f "$ssh_known_hosts" ]]; then
+  echo "✓ Mounting SSH known_hosts (bind-mount, ro): $ssh_known_hosts"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:Z,ro")
+  else
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:ro")
+  fi
+else
+  echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
 fi
 
 # GPG agent
