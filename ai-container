@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# Detect SELinux
+selinux_label=""
+if command -v sestatus &>/dev/null; then
+  selinux_status=$(sestatus 2>/dev/null)
+  if echo "$selinux_status" | grep -q "SELinux status:.*enabled"; then
+    mode=$(echo "$selinux_status" | grep "Current mode:" | awk '{print $3}')
+    if [[ -n "$mode" ]]; then
+      echo "✓ SELinux detected ($mode mode)"
+    else
+      echo "✓ SELinux detected (enabled)"
+    fi
+    selinux_label=":z"
+  else
+    echo "○ SELinux not detected"
+  fi
+else
+  echo "○ SELinux not detected (sestatus not available)"
+fi
+
+gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
+claude_dir="/home/pdostal/.claude"
+claude_json="/home/pdostal/.claude.json"
+gh_config="/home/pdostal/.config/gh"
+gpg_socket="$(gpgconf --list-dir agent-socket)"
+
+args=(
+  -it --rm
+  --userns=keep-id
+  --name ai
+  -h ai
+  --security-opt label=disable
+  -v "${PWD}:/workdir${selinux_label}"
+)
+
+# Google Cloud credentials
+if [[ -f "$gcloud_creds" ]]; then
+  echo "✓ Mounting Google Cloud credentials (bind-mount, ro): $gcloud_creds"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$gcloud_creds:$gcloud_creds:Z,ro")
+  else
+    args+=(-v "$gcloud_creds:$gcloud_creds:ro")
+  fi
+  args+=(-e GOOGLE_APPLICATION_CREDENTIALS="$gcloud_creds")
+  args+=(-e VERTEXAI_PROJECT=REDACTED-GCP-PROJECT)
+  args+=(-e VERTEXAI_LOCATION=global)
+else
+  echo "✗ Google Cloud credentials not found: $gcloud_creds" >&2
+fi
+
+# Claude config directory
+if [[ -d "$claude_dir" ]]; then
+  echo "✓ Mounting Claude config directory (bind-mount, rw): $claude_dir"
+  args+=(-v "$claude_dir:$claude_dir${selinux_label}")
+else
+  echo "✗ Claude config directory not found: $claude_dir" >&2
+fi
+
+# Claude config file
+if [[ -f "$claude_json" ]]; then
+  echo "✓ Mounting Claude config file (bind-mount, rw): $claude_json"
+  args+=(-v "$claude_json:$claude_json${selinux_label}")
+else
+  echo "✗ Claude config file not found: $claude_json" >&2
+fi
+
+# GitHub CLI config
+if [[ -d "$gh_config" ]]; then
+  echo "✓ Mounting GitHub CLI config (bind-mount, ro): $gh_config"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$gh_config:$gh_config:Z,ro")
+  else
+    args+=(-v "$gh_config:$gh_config:ro")
+  fi
+else
+  echo "✗ GitHub CLI config not found: $gh_config" >&2
+fi
+
+# SSH agent
+if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
+  echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
+  args+=(-v "$SSH_AUTH_SOCK:$SSH_AUTH_SOCK${selinux_label}")
+  args+=(-e SSH_AUTH_SOCK)
+else
+  echo "✗ SSH agent socket not available" >&2
+fi
+
+# GPG agent
+if [[ -S "$gpg_socket" ]]; then
+  echo "✓ Mounting GPG agent socket (bind-mount, rw): $gpg_socket"
+  args+=(-v "$gpg_socket:$gpg_socket${selinux_label}")
+else
+  echo "✗ GPG agent socket not found: $gpg_socket" >&2
+fi
+
+echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
+
+# Set entrypoint - use first argument if provided, otherwise default to claude
+if [[ -n "$1" ]]; then
+  entrypoint="$1"
+else
+  entrypoint="/home/pdostal/.local/bin/claude"
+fi
+
+echo "▶ Using entrypoint: $entrypoint"
+echo ""
+
+podman run --entrypoint "$entrypoint" "${args[@]}" ai
