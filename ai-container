@@ -24,6 +24,7 @@ claude_dir="/home/pdostal/.claude"
 claude_json="/home/pdostal/.claude.json"
 gh_config="/home/pdostal/.config/gh"
 ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
+gitconfig="/home/pdostal/.gitconfig"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 
 args=(
@@ -97,6 +98,18 @@ if [[ -f "$ssh_known_hosts" ]]; then
   fi
 else
   echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
+fi
+
+# Git config
+if [[ -f "$gitconfig" ]]; then
+  echo "✓ Mounting Git config (bind-mount, ro): $gitconfig"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$gitconfig:$gitconfig:Z,ro")
+  else
+    args+=(-v "$gitconfig:$gitconfig:ro")
+  fi
+else
+  echo "✗ Git config not found: $gitconfig" >&2
 fi
 
 # GPG agent
