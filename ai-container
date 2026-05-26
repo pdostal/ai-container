@@ -48,6 +48,9 @@ if [[ -f "$gcloud_creds" ]]; then
   args+=(-e GOOGLE_APPLICATION_CREDENTIALS="$gcloud_creds")
   args+=(-e VERTEXAI_PROJECT=REDACTED-GCP-PROJECT)
   args+=(-e VERTEXAI_LOCATION=global)
+  echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds"
+  echo "  → Setting VERTEXAI_PROJECT=REDACTED-GCP-PROJECT"
+  echo "  → Setting VERTEXAI_LOCATION=global"
 else
   echo "✗ Google Cloud credentials not found: $gcloud_creds" >&2
 fi
@@ -85,6 +88,7 @@ if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
   args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${SSH_AUTH_SOCK}$([ -n "$selinux_label" ] && echo ",z")")
   args+=(-e SSH_AUTH_SOCK)
+  echo "  → Setting SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
 else
   echo "✗ SSH agent socket not available" >&2
 fi
