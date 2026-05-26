@@ -118,16 +118,16 @@ else
 fi
 
 # OSC config
-if [[ -d "$osc" ]]; then
-  echo "✓ Mounting OSC config (bind-mount, ro): $osc"
-  if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$osc:$osc:Z,ro")
-  else
-    args+=(-v "$osc:$osc:ro")
-  fi
-else
-  echo "✗ OSC config not found: $osc" >&2
-fi
+#if [[ -d "$osc" ]]; then
+#  echo "✓ Mounting OSC config (bind-mount, ro): $osc"
+#  if [[ -n "$selinux_label" ]]; then
+#    args+=(-v "$osc:$osc:Z,ro")
+#  else
+#    args+=(-v "$osc:$osc:ro")
+#  fi
+#else
+#  echo "✗ OSC config not found: $osc" >&2
+#fi
 
 # GPG agent
 if [[ -S "$gpg_socket" ]]; then
