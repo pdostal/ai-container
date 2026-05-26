@@ -139,6 +139,9 @@ fi
 
 echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 
+args+=("--network=slirp4netns")
+#args+=("--runtime crun-vm")
+
 # Set entrypoint - use first argument if provided, otherwise default to claude
 if [[ -n "$1" ]]; then
   entrypoint="$1"

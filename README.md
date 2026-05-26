@@ -2,6 +2,12 @@
 
 Containerized AI Coding Assistants environment based on openSUSE Tumbleweed.
 
+## Prerequisities
+
+```bash
+sudo transactional-update pkg install crun libkrun1 libkrunfw5 slirp4netns
+```
+
 ## Build
 
 ```bash
