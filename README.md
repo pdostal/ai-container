@@ -14,14 +14,31 @@ podman build -t ai -f Containerfile .
 ./ai-container
 ```
 
+The `ai-container` script automatically:
+- Mounts the current directory as `/workdir`
+- Configures SELinux labels when needed
+- Forwards SSH agent for git operations
+- Forwards GPG agent for signing
+- Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
+- Mounts Claude configuration for persistence
+- Optionally mounts Google Cloud credentials when available
+
 ## Included Tools
 
-- Git ecosystem: git, git-lfs, gh, glab, gitea-tea
-- Python: python3, uv, ruff, flake8, yamllint
-- Perl: perl, perltidy
-- Linters: shellcheck, markdownlint-cli
-- Node.js: npm, npx
-- Security: gpg2, openssh-client
-- Utilities: bat, less, cnf
-- Claude Code CLI
+- **Git ecosystem**: git, git-lfs, gh, glab, gitea-tea
+- **Python**: python3, uv, ruff, flake8, yamllint
+- **Perl**: perl, perltidy
+- **Linters**: shellcheck, markdownlint-cli
+- **Node.js**: npm, npx
+- **Security**: gpg2, openssh-clients
+- **Utilities**: bat, less, cnf, command-not-found
+- **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
+- **Claude Code CLI**
 
+## Custom Entrypoint
+
+You can specify a custom entrypoint instead of Claude Code:
+
+```bash
+./ai-container /bin/bash
+```
