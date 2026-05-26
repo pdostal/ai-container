@@ -25,6 +25,7 @@ claude_json="/home/pdostal/.claude.json"
 gh_config="/home/pdostal/.config/gh"
 ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
 gitconfig="/home/pdostal/.gitconfig"
+osc="/home/pdostal/.config/osc"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 
 args=(
@@ -33,7 +34,7 @@ args=(
   --name ai
   -h ai
   --security-opt label=disable
-  -v "${PWD}:/workdir${selinux_label}"
+  "--mount=type=bind,source=${PWD},target=/workdir$([ -n "$selinux_label" ] && echo ",z")"
 )
 
 # Google Cloud credentials
@@ -82,7 +83,7 @@ fi
 # SSH agent
 if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
-  args+=(-v "$SSH_AUTH_SOCK:$SSH_AUTH_SOCK${selinux_label}")
+  args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${SSH_AUTH_SOCK}$([ -n "$selinux_label" ] && echo ",z")")
   args+=(-e SSH_AUTH_SOCK)
 else
   echo "✗ SSH agent socket not available" >&2
@@ -112,10 +113,22 @@ else
   echo "✗ Git config not found: $gitconfig" >&2
 fi
 
+# OSC config
+if [[ -d "$osc" ]]; then
+  echo "✓ Mounting OSC config (bind-mount, ro): $osc"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$osc:$osc:Z,ro")
+  else
+    args+=(-v "$osc:$osc:ro")
+  fi
+else
+  echo "✗ OSC config not found: $osc" >&2
+fi
+
 # GPG agent
 if [[ -S "$gpg_socket" ]]; then
   echo "✓ Mounting GPG agent socket (bind-mount, rw): $gpg_socket"
-  args+=(-v "$gpg_socket:$gpg_socket${selinux_label}")
+  args+=("--mount=type=bind,source=${gpg_socket},target=${gpg_socket}$([ -n "$selinux_label" ] && echo ",z")")
 else
   echo "✗ GPG agent socket not found: $gpg_socket" >&2
 fi
