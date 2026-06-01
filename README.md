@@ -43,8 +43,15 @@ The `ai-container` script automatically:
 
 ## Custom Entrypoint
 
-You can specify a custom entrypoint instead of Claude Code:
+You can specify a custom entrypoint using the `--entrypoint` flag:
 
 ```bash
-./ai-container /bin/bash
+# Run bash instead of Claude Code
+./ai-container --entrypoint /bin/bash
+
+# Run a command with arguments
+./ai-container --entrypoint /bin/echo hello world
+
+# Pass arguments to the default entrypoint (Claude Code)
+./ai-container --help
 ```
