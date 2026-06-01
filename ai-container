@@ -19,6 +19,25 @@ else
   echo "○ SELinux not detected (sestatus not available)"
 fi
 
+# Parse command-line arguments
+entrypoint="/home/pdostal/.local/bin/claude"
+remaining_args=()
+
+if ! TEMP=$(getopt -o '' --long entrypoint: -n 'ai-container' -- "$@"); then
+  exit 1
+fi
+eval set -- "$TEMP"
+
+while true; do
+  case "$1" in
+    --entrypoint) entrypoint="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+
+remaining_args=("$@")
+
 gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
 claude_dir="/home/pdostal/.claude"
 claude_json="/home/pdostal/.claude.json"
@@ -155,14 +174,7 @@ echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 args+=("--network=slirp4netns")
 #args+=("--runtime crun-vm")
 
-# Set entrypoint - use first argument if provided, otherwise default to claude
-if [[ -n "$1" ]]; then
-  entrypoint="$1"
-else
-  entrypoint="/home/pdostal/.local/bin/claude"
-fi
-
 echo "▶ Using entrypoint: $entrypoint"
 echo ""
 
-podman run --entrypoint "$entrypoint" "${args[@]}" ai
+podman run --entrypoint "$entrypoint" "${args[@]}" ai "${remaining_args[@]}"
