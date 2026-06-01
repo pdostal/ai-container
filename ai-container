@@ -23,6 +23,7 @@ gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
 claude_dir="/home/pdostal/.claude"
 claude_json="/home/pdostal/.claude.json"
 gh_config="/home/pdostal/.config/gh"
+glab_config="/home/pdostal/.config/glab-cli"
 ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
 gitconfig="/home/pdostal/.gitconfig"
 osc="/home/pdostal/.config/osc"
@@ -81,6 +82,18 @@ if [[ -d "$gh_config" ]]; then
   fi
 else
   echo "✗ GitHub CLI config not found: $gh_config" >&2
+fi
+
+# GitLab CLI config
+if [[ -d "$glab_config" ]]; then
+  echo "✓ Mounting GitLab CLI config (bind-mount, ro): $glab_config"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$glab_config:$glab_config:Z,ro")
+  else
+    args+=(-v "$glab_config:$glab_config:ro")
+  fi
+else
+  echo "✗ GitLab CLI config not found: $glab_config" >&2
 fi
 
 # SSH agent
