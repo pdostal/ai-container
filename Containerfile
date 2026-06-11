@@ -11,4 +11,5 @@ RUN mkdir /workdir
 WORKDIR /workdir
 USER pdostal
 RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://opencode.ai/install | bash
 ENV PATH="/home/pdostal/.local/bin:$PATH"

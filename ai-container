@@ -20,10 +20,10 @@ else
 fi
 
 # Parse command-line arguments
-entrypoint="/home/pdostal/.local/bin/claude"
+entrypoint="/home/pdostal/.opencode/bin/opencode"
 remaining_args=()
 
-if ! TEMP=$(getopt -o '' --long entrypoint: -n 'ai-container' -- "$@"); then
+if ! TEMP=$(getopt -o '' --long entrypoint:,claude,opencode -n 'ai-container' -- "$@"); then
   exit 1
 fi
 eval set -- "$TEMP"
@@ -31,6 +31,8 @@ eval set -- "$TEMP"
 while true; do
   case "$1" in
     --entrypoint) entrypoint="$2"; shift 2 ;;
+    --claude) entrypoint="/home/pdostal/.local/bin/claude"; shift ;;
+    --opencode) entrypoint="/home/pdostal/.opencode/bin/opencode"; shift ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -42,6 +44,7 @@ gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
 claude_dir="/home/pdostal/.claude"
 claude_json="/home/pdostal/.claude.json"
 gh_config="/home/pdostal/.config/gh"
+opencode_config="/home/pdostal/.config/opencode"
 glab_config="/home/pdostal/.config/glab-cli"
 ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
 gitconfig="/home/pdostal/.gitconfig"
@@ -66,9 +69,13 @@ if [[ -f "$gcloud_creds" ]]; then
     args+=(-v "$gcloud_creds:$gcloud_creds:ro")
   fi
   args+=(-e GOOGLE_APPLICATION_CREDENTIALS="$gcloud_creds")
+  args+=(-e GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT)
+  args+=(-e VERTEX_LOCATION=global)
   args+=(-e VERTEXAI_PROJECT=REDACTED-GCP-PROJECT)
   args+=(-e VERTEXAI_LOCATION=global)
   echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds"
+  echo "  → Setting GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT"
+  echo "  → Setting VERTEX_LOCATION=global"
   echo "  → Setting VERTEXAI_PROJECT=REDACTED-GCP-PROJECT"
   echo "  → Setting VERTEXAI_LOCATION=global"
 else
@@ -113,6 +120,14 @@ if [[ -d "$glab_config" ]]; then
   fi
 else
   echo "✗ GitLab CLI config not found: $glab_config" >&2
+fi
+
+# OpenCode config
+if [[ -d "$opencode_config" ]]; then
+  echo "✓ Mounting OpenCode config directory (bind-mount, rw): $opencode_config"
+  args+=(-v "$opencode_config:$opencode_config${selinux_label}")
+else
+  echo "✗ OpenCode config directory not found: $opencode_config" >&2
 fi
 
 # SSH agent
