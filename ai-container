@@ -142,11 +142,11 @@ fi
 
 # SSH known_hosts
 if [[ -f "$ssh_known_hosts" ]]; then
-  echo "✓ Mounting SSH known_hosts (bind-mount, ro): $ssh_known_hosts"
+  echo "✓ Mounting SSH known_hosts (bind-mount, rw): $ssh_known_hosts"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:Z,ro")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:Z")
   else
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:ro")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts")
   fi
 else
   echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
