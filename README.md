@@ -1,6 +1,6 @@
-# Claude Code Container
+# AI Container
 
-Containerized AI Coding Assistants environment based on openSUSE Tumbleweed.
+Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Supports Claude Code and OpenCode.
 
 ## Prerequisities
 
@@ -26,7 +26,7 @@ The `ai-container` script automatically:
 - Forwards SSH agent for git operations
 - Forwards GPG agent for signing
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
-- Mounts Claude configuration for persistence
+- Mounts AI assistant configurations for persistence (Claude Code, OpenCode)
 - Optionally mounts Google Cloud credentials when available
 
 ## Included Tools
@@ -39,19 +39,19 @@ The `ai-container` script automatically:
 - **Security**: gpg2, openssh-clients
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
-- **Claude Code CLI**
+- **AI Coding Assistants**: Claude Code, OpenCode
 
 ## Custom Entrypoint
 
 You can specify a custom entrypoint using the `--entrypoint` flag:
 
 ```bash
-# Run bash instead of Claude Code
+# Run bash instead of the default entrypoint
 ./ai-container --entrypoint /bin/bash
 
 # Run a command with arguments
 ./ai-container --entrypoint /bin/echo hello world
 
-# Pass arguments to the default entrypoint (Claude Code)
+# Pass arguments to the default entrypoint
 ./ai-container --help
 ```
