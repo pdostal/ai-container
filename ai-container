@@ -49,6 +49,7 @@ glab_config="/home/pdostal/.config/glab-cli"
 ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
 gitconfig="/home/pdostal/.gitconfig"
 osc="/home/pdostal/.config/osc"
+openqa_client="/home/pdostal/.config/openqa/client.conf"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 
 args=(
@@ -175,6 +176,18 @@ fi
 #else
 #  echo "✗ OSC config not found: $osc" >&2
 #fi
+
+# openQA client config
+if [[ -f "$openqa_client" ]]; then
+  echo "✓ Mounting openQA client config (bind-mount, ro): $openqa_client"
+  if [[ -n "$selinux_label" ]]; then
+    args+=(-v "$openqa_client:$openqa_client:Z,ro")
+  else
+    args+=(-v "$openqa_client:$openqa_client:ro")
+  fi
+else
+  echo "✗ openQA client config not found: $openqa_client" >&2
+fi
 
 # GPG agent
 if [[ -S "$gpg_socket" ]]; then
