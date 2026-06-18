@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
+host_home="${HOME}"
+container_home="/home/coder"
+platform="$(uname -s)"
+
 # Detect SELinux
 selinux_label=""
-if command -v sestatus &>/dev/null; then
+if [[ "$platform" != "Darwin" ]] && command -v sestatus &>/dev/null; then
   selinux_status=$(sestatus 2>/dev/null)
   if echo "$selinux_status" | grep -q "SELinux status:.*enabled"; then
     mode=$(echo "$selinux_status" | grep "Current mode:" | awk '{print $3}')
@@ -20,19 +24,14 @@ else
 fi
 
 # Parse command-line arguments
-entrypoint="/home/pdostal/.opencode/bin/opencode"
+entrypoint="${container_home}/.opencode/bin/opencode"
 remaining_args=()
-
-if ! TEMP=$(getopt -o '' --long entrypoint:,claude,opencode -n 'ai-container' -- "$@"); then
-  exit 1
-fi
-eval set -- "$TEMP"
 
 while true; do
   case "$1" in
     --entrypoint) entrypoint="$2"; shift 2 ;;
-    --claude) entrypoint="/home/pdostal/.local/bin/claude"; shift ;;
-    --opencode) entrypoint="/home/pdostal/.opencode/bin/opencode"; shift ;;
+    --claude) entrypoint="${container_home}/.local/bin/claude"; shift ;;
+    --opencode) entrypoint="${container_home}/.opencode/bin/opencode"; shift ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -40,24 +39,34 @@ done
 
 remaining_args=("$@")
 
-gcloud_creds="/home/pdostal/.config/gcloud/application_default_credentials.json"
-claude_dir="/home/pdostal/.claude"
-claude_json="/home/pdostal/.claude.json"
-gh_config="/home/pdostal/.config/gh"
-opencode_config="/home/pdostal/.config/opencode"
-glab_config="/home/pdostal/.config/glab-cli"
-ssh_known_hosts="/home/pdostal/.ssh/known_hosts"
-gitconfig="/home/pdostal/.gitconfig"
-osc="/home/pdostal/.config/osc"
-openqa_client="/home/pdostal/.config/openqa/client.conf"
+gcloud_creds="${host_home}/.config/gcloud/application_default_credentials.json"
+gcloud_creds_target="${container_home}/.config/gcloud/application_default_credentials.json"
+claude_dir="${host_home}/.claude"
+claude_dir_target="${container_home}/.claude"
+claude_json="${host_home}/.claude.json"
+claude_json_target="${container_home}/.claude.json"
+gh_config="${host_home}/.config/gh"
+gh_config_target="${container_home}/.config/gh"
+opencode_config="${host_home}/.config/opencode"
+opencode_config_target="${container_home}/.config/opencode"
+glab_config="${host_home}/.config/glab-cli"
+glab_config_target="${container_home}/.config/glab-cli"
+ssh_known_hosts="${host_home}/.ssh/known_hosts"
+ssh_known_hosts_target="${container_home}/.ssh/known_hosts"
+gitconfig="${host_home}/.gitconfig"
+gitconfig_target="${container_home}/.gitconfig"
+openqa_client="${host_home}/.config/openqa/client.conf"
+openqa_client_target="${container_home}/.config/openqa/client.conf"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
+gpg_socket_target="${container_home}/.gnupg/S.gpg-agent"
+ssh_auth_sock_target="${container_home}/.ssh/agent/ssh-agent.sock"
 
 args=(
   -it --rm
-  --userns=keep-id
   --name ai
   -h ai
   --security-opt label=disable
+  -e HOME="${container_home}"
   "--mount=type=bind,source=${PWD},target=/workdir$([ -n "$selinux_label" ] && echo ",z")"
 )
 
@@ -65,16 +74,16 @@ args=(
 if [[ -f "$gcloud_creds" ]]; then
   echo "✓ Mounting Google Cloud credentials (bind-mount, ro): $gcloud_creds"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$gcloud_creds:$gcloud_creds:Z,ro")
+    args+=(-v "$gcloud_creds:$gcloud_creds_target:Z,ro")
   else
-    args+=(-v "$gcloud_creds:$gcloud_creds:ro")
+    args+=(-v "$gcloud_creds:$gcloud_creds_target:ro")
   fi
-  args+=(-e GOOGLE_APPLICATION_CREDENTIALS="$gcloud_creds")
+  args+=(-e GOOGLE_APPLICATION_CREDENTIALS="$gcloud_creds_target")
   args+=(-e GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT)
   args+=(-e VERTEX_LOCATION=global)
   args+=(-e VERTEXAI_PROJECT=REDACTED-GCP-PROJECT)
   args+=(-e VERTEXAI_LOCATION=global)
-  echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds"
+  echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds_target"
   echo "  → Setting GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT"
   echo "  → Setting VERTEX_LOCATION=global"
   echo "  → Setting VERTEXAI_PROJECT=REDACTED-GCP-PROJECT"
@@ -86,7 +95,7 @@ fi
 # Claude config directory
 if [[ -d "$claude_dir" ]]; then
   echo "✓ Mounting Claude config directory (bind-mount, rw): $claude_dir"
-  args+=(-v "$claude_dir:$claude_dir${selinux_label}")
+  args+=(-v "$claude_dir:$claude_dir_target${selinux_label}")
 else
   echo "✗ Claude config directory not found: $claude_dir" >&2
 fi
@@ -94,7 +103,7 @@ fi
 # Claude config file
 if [[ -f "$claude_json" ]]; then
   echo "✓ Mounting Claude config file (bind-mount, rw): $claude_json"
-  args+=(-v "$claude_json:$claude_json${selinux_label}")
+  args+=(-v "$claude_json:$claude_json_target${selinux_label}")
 else
   echo "✗ Claude config file not found: $claude_json" >&2
 fi
@@ -103,9 +112,9 @@ fi
 if [[ -d "$gh_config" ]]; then
   echo "✓ Mounting GitHub CLI config (bind-mount, ro): $gh_config"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$gh_config:$gh_config:Z,ro")
+    args+=(-v "$gh_config:$gh_config_target:Z,ro")
   else
-    args+=(-v "$gh_config:$gh_config:ro")
+    args+=(-v "$gh_config:$gh_config_target:ro")
   fi
 else
   echo "✗ GitHub CLI config not found: $gh_config" >&2
@@ -115,9 +124,9 @@ fi
 if [[ -d "$glab_config" ]]; then
   echo "✓ Mounting GitLab CLI config (bind-mount, ro): $glab_config"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$glab_config:$glab_config:Z,ro")
+    args+=(-v "$glab_config:$glab_config_target:Z,ro")
   else
-    args+=(-v "$glab_config:$glab_config:ro")
+    args+=(-v "$glab_config:$glab_config_target:ro")
   fi
 else
   echo "✗ GitLab CLI config not found: $glab_config" >&2
@@ -126,7 +135,7 @@ fi
 # OpenCode config
 if [[ -d "$opencode_config" ]]; then
   echo "✓ Mounting OpenCode config directory (bind-mount, rw): $opencode_config"
-  args+=(-v "$opencode_config:$opencode_config${selinux_label}")
+  args+=(-v "$opencode_config:$opencode_config_target${selinux_label}")
 else
   echo "✗ OpenCode config directory not found: $opencode_config" >&2
 fi
@@ -134,9 +143,9 @@ fi
 # SSH agent
 if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
-  args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${SSH_AUTH_SOCK}$([ -n "$selinux_label" ] && echo ",z")")
-  args+=(-e SSH_AUTH_SOCK)
-  echo "  → Setting SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+  args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${ssh_auth_sock_target}$([ -n "$selinux_label" ] && echo ",z")")
+  args+=(-e SSH_AUTH_SOCK="${ssh_auth_sock_target}")
+  echo "  → Setting SSH_AUTH_SOCK=$ssh_auth_sock_target"
 else
   echo "✗ SSH agent socket not available" >&2
 fi
@@ -145,9 +154,9 @@ fi
 if [[ -f "$ssh_known_hosts" ]]; then
   echo "✓ Mounting SSH known_hosts (bind-mount, rw): $ssh_known_hosts"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts:Z")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:Z")
   else
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target")
   fi
 else
   echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
@@ -157,33 +166,21 @@ fi
 if [[ -f "$gitconfig" ]]; then
   echo "✓ Mounting Git config (bind-mount, ro): $gitconfig"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$gitconfig:$gitconfig:Z,ro")
+    args+=(-v "$gitconfig:$gitconfig_target:Z,ro")
   else
-    args+=(-v "$gitconfig:$gitconfig:ro")
+    args+=(-v "$gitconfig:$gitconfig_target:ro")
   fi
 else
   echo "✗ Git config not found: $gitconfig" >&2
 fi
 
-# OSC config
-#if [[ -d "$osc" ]]; then
-#  echo "✓ Mounting OSC config (bind-mount, ro): $osc"
-#  if [[ -n "$selinux_label" ]]; then
-#    args+=(-v "$osc:$osc:Z,ro")
-#  else
-#    args+=(-v "$osc:$osc:ro")
-#  fi
-#else
-#  echo "✗ OSC config not found: $osc" >&2
-#fi
-
 # openQA client config
 if [[ -f "$openqa_client" ]]; then
   echo "✓ Mounting openQA client config (bind-mount, ro): $openqa_client"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$openqa_client:$openqa_client:Z,ro")
+    args+=(-v "$openqa_client:$openqa_client_target:Z,ro")
   else
-    args+=(-v "$openqa_client:$openqa_client:ro")
+    args+=(-v "$openqa_client:$openqa_client_target:ro")
   fi
 else
   echo "✗ openQA client config not found: $openqa_client" >&2
@@ -192,14 +189,16 @@ fi
 # GPG agent
 if [[ -S "$gpg_socket" ]]; then
   echo "✓ Mounting GPG agent socket (bind-mount, rw): $gpg_socket"
-  args+=("--mount=type=bind,source=${gpg_socket},target=${gpg_socket}$([ -n "$selinux_label" ] && echo ",z")")
+  args+=("--mount=type=bind,source=${gpg_socket},target=${gpg_socket_target}$([ -n "$selinux_label" ] && echo ",z")")
 else
   echo "✗ GPG agent socket not found: $gpg_socket" >&2
 fi
 
 echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 
-args+=("--network=slirp4netns")
+if [[ "$platform" != "Darwin" ]]; then
+  args+=("--network=slirp4netns")
+fi
 #args+=("--runtime crun-vm")
 
 echo "▶ Using entrypoint: $entrypoint"
