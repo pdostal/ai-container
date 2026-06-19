@@ -223,6 +223,7 @@ fi
 echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 
 args+=("--network=slirp4netns")
+args+=("--userns=keep-id")
 #args+=("--runtime crun-vm")
 
 echo "▶ Using entrypoint: $entrypoint"
