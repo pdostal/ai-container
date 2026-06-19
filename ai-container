@@ -24,15 +24,27 @@ else
   echo "○ SELinux not detected (sestatus not available)"
 fi
 
+# Generate random container name (exclude ambiguous chars: 0, 1, i, l, o)
+suffix="$(LC_ALL=C tr -dc 'acdefghjkmnpqrstuvwxyz23456789' < /dev/urandom | head -c 3)"
+container_name="ai-${suffix}"
+
 # Parse command-line arguments
 entrypoint="${container_home}/.opencode/bin/opencode"
+web_mode=false
+web_port=4996
+web_password=""
+web_username="coder"
 remaining_args=()
 
 while true; do
   case "$1" in
-    --entrypoint) entrypoint="$2"; shift 2 ;;
-    --claude) entrypoint="${container_home}/.local/bin/claude"; shift ;;
-    --opencode) entrypoint="${container_home}/.opencode/bin/opencode"; shift ;;
+    --entrypoint)    entrypoint="$2"; shift 2 ;;
+    --claude)        entrypoint="${container_home}/.local/bin/claude"; shift ;;
+    --opencode)      entrypoint="${container_home}/.opencode/bin/opencode"; shift ;;
+    --web)           web_mode=true; shift ;;
+    --web-port)      web_port="$2"; shift 2 ;;
+    --web-password)  web_password="$2"; shift 2 ;;
+    --web-username)  web_username="$2"; shift 2 ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -72,8 +84,8 @@ if [[ -z "$PWD" ]]; then
 fi
 
 args=(
-  -it --rm
-  --name ai
+  --rm
+  --name "${container_name}"
   -h ai
   --security-opt label=disable
   -e HOME="${container_home}"
@@ -222,11 +234,28 @@ fi
 
 echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 
+if [[ "$web_mode" == "true" ]]; then
+  if [[ -z "$web_password" ]]; then
+    web_password="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
+  fi
+  args+=(-d)
+  args+=(-p "${web_port}:${web_port}")
+  args+=(-e OPENCODE_SERVER_PASSWORD="${web_password}")
+  args+=(-e OPENCODE_SERVER_USERNAME="${web_username}")
+  remaining_args=("web" "--hostname" "0.0.0.0" "--port" "$web_port" "${remaining_args[@]}")
+  echo "✓ Web mode: http://$(hostname -I | awk '{print $1}'):${web_port}"
+  echo "✓ Web username: ${web_username}"
+  echo "✓ Web password: ${web_password}"
+else
+  args+=(-it)
+fi
+
 args+=("--network=slirp4netns")
 args+=("--userns=keep-id")
 #args+=("--runtime crun-vm")
 
+echo "✓ Container name: ${container_name}"
 echo "▶ Using entrypoint: $entrypoint"
 echo ""
 
-podman run --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"
+podman run --init --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"

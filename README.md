@@ -33,6 +33,25 @@ The `ai-container` script automatically:
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
 - Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state)
 - Optionally mounts Google Cloud credentials when available
+- Assigns a random container name (e.g. `ai-x7q`) printed on every run
+
+### Web mode
+
+Run OpenCode as a background web server:
+
+```bash
+./ai-container --web
+```
+
+The container runs detached. The web interface URL, username, and password are printed on startup.
+
+Additional web options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--web-port PORT` | `4996` | Port to expose the web interface on |
+| `--web-username USER` | `coder` | HTTP basic auth username |
+| `--web-password PASS` | *(random)* | HTTP basic auth password |
 
 ## Included Tools
 
