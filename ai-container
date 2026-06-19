@@ -62,17 +62,10 @@ gpg_socket="$(gpgconf --list-dir agent-socket)"
 gpg_socket_target="${container_home}/.gnupg/S.gpg-agent"
 ssh_auth_sock_target="${container_home}/.ssh/agent/ssh-agent.sock"
 
-quote_command() {
-  local quoted
-  local command=""
-
-  for arg in "$@"; do
-    printf -v quoted '%q' "$arg"
-    command+=" $quoted"
-  done
-
-  printf '%s' "${command# }"
-}
+if [[ -z "$PWD" ]]; then
+  echo "✗ PWD is empty; refusing to bind-mount workdir" >&2
+  exit 1
+fi
 
 args=(
   -it --rm
@@ -154,13 +147,7 @@ else
 fi
 
 # SSH agent
-if [[ "$platform" == "Darwin" ]]; then
-  if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
-    echo "✓ SSH agent available for Podman machine forwarding: $SSH_AUTH_SOCK"
-  else
-    echo "✗ SSH agent socket not available" >&2
-  fi
-elif [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
+if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
   args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${ssh_auth_sock_target}$([ -n "$selinux_label" ] && echo ",z")")
   args+=(-e SSH_AUTH_SOCK="${ssh_auth_sock_target}")
@@ -223,36 +210,4 @@ fi
 echo "▶ Using entrypoint: $entrypoint"
 echo ""
 
-if [[ "$platform" == "Darwin" ]]; then
-  read -r podman_machine_identity podman_machine_port podman_machine_user podman_machine_rootful < <(
-    podman machine inspect --format '{{.SSHConfig.IdentityPath}} {{.SSHConfig.Port}} {{.SSHConfig.RemoteUsername}} {{.Rootful}}'
-  )
-
-  if [[ -z "$podman_machine_identity" || -z "$podman_machine_port" || -z "$podman_machine_user" ]]; then
-    echo "✗ Could not read Podman machine SSH configuration" >&2
-    exit 1
-  fi
-
-  if [[ "$podman_machine_rootful" == "true" ]]; then
-    remote_command="$(quote_command sudo --preserve-env=SSH_AUTH_SOCK podman run --entrypoint "$entrypoint" "${args[@]}")"
-  else
-    remote_command="$(quote_command podman run --entrypoint "$entrypoint" "${args[@]}")"
-  fi
-  if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
-    remote_command+=" --mount=type=bind,source=\"\$SSH_AUTH_SOCK\",target=$ssh_auth_sock_target"
-    remote_command+=" $(quote_command -e SSH_AUTH_SOCK="$ssh_auth_sock_target")"
-    echo "  → Setting SSH_AUTH_SOCK=$ssh_auth_sock_target"
-  fi
-  remote_command+=" $(quote_command "$image" "${remaining_args[@]}")"
-
-  ssh -A -t \
-    -i "$podman_machine_identity" \
-    -p "$podman_machine_port" \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -o LogLevel=ERROR \
-    "$podman_machine_user@localhost" \
-    "$remote_command"
-else
-  podman run --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"
-fi
+podman run --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"

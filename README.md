@@ -28,7 +28,7 @@ The `ai-container` script automatically:
 - Mounts configuration from the host home directory into `/home/coder`
 - Runs as the image's `coder` user
 - Configures SELinux labels when needed
-- Forwards SSH agent for git operations
+- Forwards SSH agent for git operations (Linux only)
 - Forwards GPG agent for signing
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
 - Mounts AI assistant configurations for persistence (Claude Code, OpenCode)
