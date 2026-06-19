@@ -31,7 +31,7 @@ The `ai-container` script automatically:
 - Forwards SSH agent for git operations (Linux only)
 - Forwards GPG agent for signing
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
-- Mounts AI assistant configurations for persistence (Claude Code, OpenCode)
+- Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state)
 - Optionally mounts Google Cloud credentials when available
 
 ## Included Tools

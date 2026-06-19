@@ -50,6 +50,10 @@ gh_config="${host_home}/.config/gh"
 gh_config_target="${container_home}/.config/gh"
 opencode_config="${host_home}/.config/opencode"
 opencode_config_target="${container_home}/.config/opencode"
+opencode_data="${host_home}/.local/share/opencode"
+opencode_data_target="${container_home}/.local/share/opencode"
+opencode_state="${host_home}/.local/state/opencode"
+opencode_state_target="${container_home}/.local/state/opencode"
 glab_config="${host_home}/.config/glab-cli"
 glab_config_target="${container_home}/.config/glab-cli"
 ssh_known_hosts="${host_home}/.ssh/known_hosts"
@@ -146,6 +150,22 @@ else
   echo "✗ OpenCode config directory not found: $opencode_config" >&2
 fi
 
+# OpenCode data
+if [[ -d "$opencode_data" ]]; then
+  echo "✓ Mounting OpenCode data directory (bind-mount, rw): $opencode_data"
+  args+=(-v "$opencode_data:$opencode_data_target${selinux_label}")
+else
+  echo "✗ OpenCode data directory not found: $opencode_data" >&2
+fi
+
+# OpenCode state
+if [[ -d "$opencode_state" ]]; then
+  echo "✓ Mounting OpenCode state directory (bind-mount, rw): $opencode_state"
+  args+=(-v "$opencode_state:$opencode_state_target${selinux_label}")
+else
+  echo "✗ OpenCode state directory not found: $opencode_state" >&2
+fi
+
 # SSH agent
 if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
   echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
@@ -158,11 +178,11 @@ fi
 
 # SSH known_hosts
 if [[ -f "$ssh_known_hosts" ]]; then
-  echo "✓ Mounting SSH known_hosts (bind-mount, rw): $ssh_known_hosts"
+  echo "✓ Mounting SSH known_hosts (bind-mount, ro): $ssh_known_hosts"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:Z")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:Z,ro")
   else
-    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target")
+    args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:ro")
   fi
 else
   echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
