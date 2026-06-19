@@ -222,9 +222,7 @@ fi
 
 echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
 
-if [[ "$platform" != "Darwin" ]]; then
-  args+=("--network=slirp4netns")
-fi
+args+=("--network=slirp4netns")
 #args+=("--runtime crun-vm")
 
 echo "▶ Using entrypoint: $entrypoint"
