@@ -77,6 +77,8 @@ openqa_client_target="${container_home}/.config/openqa/client.conf"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 gpg_socket_target="${container_home}/.gnupg/S.gpg-agent"
 ssh_auth_sock_target="${container_home}/.ssh/agent/ssh-agent.sock"
+kube_config="${host_home}/.kube"
+kube_config_target="${container_home}/.kube"
 
 if [[ -z "$PWD" ]]; then
   echo "✗ PWD is empty; refusing to bind-mount workdir" >&2
@@ -222,6 +224,14 @@ if [[ -f "$openqa_client" ]]; then
   fi
 else
   echo "✗ openQA client config not found: $openqa_client" >&2
+fi
+
+# Kubernetes config
+if [[ -d "$kube_config" ]]; then
+  echo "✓ Mounting Kubernetes config (bind-mount, rw): $kube_config"
+  args+=(-v "$kube_config:$kube_config_target${selinux_label}")
+else
+  echo "✗ Kubernetes config not found: $kube_config" >&2
 fi
 
 # GPG agent
