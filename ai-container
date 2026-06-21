@@ -67,6 +67,10 @@ opencode_data_target="${container_home}/.local/share/opencode"
 opencode_state="${host_home}/.local/state/opencode"
 opencode_state_target="${container_home}/.local/state/opencode"
 glab_config="${host_home}/.config/glab-cli"
+glab_config_alt="${host_home}/Library/Application Support/glab-cli"
+if [[ -d "$glab_config_alt" ]]; then
+  glab_config="$glab_config_alt"
+fi
 glab_config_target="${container_home}/.config/glab-cli"
 ssh_known_hosts="${host_home}/.ssh/known_hosts"
 ssh_known_hosts_target="${container_home}/.ssh/known_hosts"
