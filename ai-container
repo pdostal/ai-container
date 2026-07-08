@@ -85,6 +85,8 @@ kube_config="${host_home}/.kube"
 kube_config_target="${container_home}/.kube"
 osc_config="${host_home}/.config/osc"
 osc_config_target="${container_home}/.config/osc"
+tea_config="${host_home}/.config/tea"
+tea_config_target="${container_home}/.config/tea"
 
 if [[ -z "$PWD" ]]; then
   echo "✗ PWD is empty; refusing to bind-mount workdir" >&2
@@ -238,6 +240,14 @@ if [[ -d "$osc_config" ]]; then
   args+=(-v "$osc_config:$osc_config_target${selinux_label}")
 else
   echo "✗ osc config directory not found: $osc_config" >&2
+fi
+
+# tea config
+if [[ -d "$tea_config" ]]; then
+  echo "✓ Mounting tea config directory (bind-mount, rw): $tea_config"
+  args+=(-v "$tea_config:$tea_config_target${selinux_label}")
+else
+  echo "✗ tea config directory not found: $tea_config" >&2
 fi
 
 # Kubernetes config
