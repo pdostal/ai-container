@@ -87,6 +87,8 @@ osc_config="${host_home}/.config/osc"
 osc_config_target="${container_home}/.config/osc"
 tea_config="${host_home}/.config/tea"
 tea_config_target="${container_home}/.config/tea"
+aws_config="${host_home}/.aws"
+aws_config_target="${container_home}/.aws"
 
 if [[ -z "$PWD" ]]; then
   echo "✗ PWD is empty; refusing to bind-mount workdir" >&2
@@ -248,6 +250,14 @@ if [[ -d "$tea_config" ]]; then
   args+=(-v "$tea_config:$tea_config_target${selinux_label}")
 else
   echo "✗ tea config directory not found: $tea_config" >&2
+fi
+
+# AWS config
+if [[ -d "$aws_config" ]]; then
+  echo "✓ Mounting AWS config directory (bind-mount, rw): $aws_config"
+  args+=(-v "$aws_config:$aws_config_target${selinux_label}")
+else
+  echo "✗ AWS config directory not found: $aws_config" >&2
 fi
 
 # Kubernetes config
