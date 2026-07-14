@@ -76,8 +76,8 @@ ssh_known_hosts="${host_home}/.ssh/known_hosts"
 ssh_known_hosts_target="${container_home}/.ssh/known_hosts"
 gitconfig="${host_home}/.gitconfig"
 gitconfig_target="${container_home}/.gitconfig"
-openqa_client="${host_home}/.config/openqa/client.conf"
-openqa_client_target="${container_home}/.config/openqa/client.conf"
+openqa_config="${host_home}/.config/openqa"
+openqa_config_target="${container_home}/.config/openqa"
 gpg_socket="$(gpgconf --list-dir agent-socket)"
 gpg_socket_target="${container_home}/.gnupg/S.gpg-agent"
 ssh_auth_sock_target="${container_home}/.ssh/agent/ssh-agent.sock"
@@ -224,16 +224,16 @@ else
   echo "✗ Git config not found: $gitconfig" >&2
 fi
 
-# openQA client config
-if [[ -f "$openqa_client" ]]; then
-  echo "✓ Mounting openQA client config (bind-mount, ro): $openqa_client"
+# openQA config directory
+if [[ -d "$openqa_config" ]]; then
+  echo "✓ Mounting openQA config directory (bind-mount, ro): $openqa_config"
   if [[ -n "$selinux_label" ]]; then
-    args+=(-v "$openqa_client:$openqa_client_target:Z,ro")
+    args+=(-v "$openqa_config:$openqa_config_target:Z,ro")
   else
-    args+=(-v "$openqa_client:$openqa_client_target:ro")
+    args+=(-v "$openqa_config:$openqa_config_target:ro")
   fi
 else
-  echo "✗ openQA client config not found: $openqa_client" >&2
+  echo "✗ openQA config directory not found: $openqa_config" >&2
 fi
 
 # osc config
