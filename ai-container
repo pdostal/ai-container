@@ -294,7 +294,7 @@ else
   args+=(-it)
 fi
 
-args+=("--network=slirp4netns")
+args+=("--network=slirp4netns:allow_host_loopback=true")
 args+=("--userns=keep-id")
 #args+=("--runtime crun-vm")
 
