@@ -95,13 +95,27 @@ if [[ -z "$PWD" ]]; then
   exit 1
 fi
 
+if [[ "$PWD" == "$host_home" ]]; then
+  echo "✗ Refusing to run: current directory is your entire \$HOME ($host_home)" >&2
+  echo "  Run this from a project subdirectory instead." >&2
+  exit 1
+fi
+
+case "$PWD" in
+  "$host_home"/*)
+    target_workdir="${container_home}${PWD#"$host_home"}" ;;
+  *)
+    target_workdir="$PWD" ;;
+esac
+
 args=(
   --rm
   --name "${container_name}"
   -h ai
   --security-opt label=disable
   -e HOME="${container_home}"
-  "--mount=type=bind,source=${PWD},target=/workdir$([ -n "$selinux_label" ] && echo ",z")"
+  -w "${target_workdir}"
+  "--mount=type=bind,source=${PWD},target=${target_workdir}$([ -n "$selinux_label" ] && echo ",z")"
 )
 
 # Google Cloud credentials
@@ -276,7 +290,7 @@ else
   echo "✗ GPG agent socket not found: $gpg_socket" >&2
 fi
 
-echo "✓ Mounting working directory (bind-mount, rw): ${PWD}"
+echo "✓ Mounting working directory (bind-mount, rw): ${PWD} → ${target_workdir}"
 
 if [[ "$web_mode" == "true" ]]; then
   if [[ -z "$web_password" ]]; then
