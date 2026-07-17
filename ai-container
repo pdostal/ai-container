@@ -250,6 +250,14 @@ else
   echo "✗ openQA config directory not found: $openqa_config" >&2
 fi
 
+# Bugzilla API key
+if [[ -n "$BUGZILLA_API_KEY" ]]; then
+  echo "✓ Forwarding BUGZILLA_API_KEY environment variable"
+  args+=(-e BUGZILLA_API_KEY="${BUGZILLA_API_KEY}")
+else
+  echo "✗ BUGZILLA_API_KEY not set" >&2
+fi
+
 # osc config
 if [[ -d "$osc_config" ]]; then
   echo "✓ Mounting osc config directory (bind-mount, rw): $osc_config"
