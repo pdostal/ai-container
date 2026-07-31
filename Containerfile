@@ -7,6 +7,7 @@ RUN zypper -n in git-core git-lfs gh glab gitea-tea bat less cnf cnf-bash openss
     gitea-tea golangci-lint python313-gitlint aws-cli python313-pylint python313-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings
 RUN npm install -g markdownlint-cli perlnavigator-server
+RUN cargo install bugwarden --locked
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
       group_name="$(getent group "${CODER_GID}" | cut -d: -f1)"; \
