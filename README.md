@@ -32,7 +32,7 @@ The `ai-container` script automatically:
 - Forwards GPG agent for signing
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config)
 - Forwards `$BUGZILLA_API_KEY` from the host environment when set
-- Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state)
+- Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
 - Optionally mounts Google Cloud credentials when available
 - Assigns a random container name (e.g. `ai-x7q`) printed on every run
 
