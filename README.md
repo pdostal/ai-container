@@ -54,6 +54,24 @@ Additional web options:
 | `--web-username USER` | `coder` | HTTP basic auth username |
 | `--web-password PASS` | *(random)* | HTTP basic auth password |
 
+## Network Configuration
+
+The container runs with `--network=pasta` instead of `slirp4netns`. Unlike `slirp4netns`, `pasta` shares the host's network stack more directly, so services bound to the host's loopback or wildcard address become reachable from inside the container. That's convenient for MCP servers running on the host that the container's AI assistants need to call, but it also means those services are no longer isolated behind the old slirp NAT boundary.
+
+To keep that reachability without opening host services to the public zone, MCP servers are bound to a dedicated `dummy0` interface instead of loopback:
+
+```bash
+sudo nmcli connection add type dummy con-name dummy0 ifname dummy0 ip4 172.29.0.1/24
+sudo firewall-cmd --permanent --zone=trusted --add-interface=dummy0
+sudo firewall-cmd --permanent --new-policy=block-pub-dummy
+sudo firewall-cmd --permanent --policy=block-pub-dummy --add-ingress-zone=public
+sudo firewall-cmd --permanent --policy=block-pub-dummy --add-egress-zone=trusted
+sudo firewall-cmd --permanent --policy=block-pub-dummy --set-target=REJECT
+sudo firewall-cmd --reload
+```
+
+`dummy0` (`172.29.0.1/24`) sits in the `trusted` zone. The `block-pub-dummy` policy rejects any traffic from the `public` zone into `trusted`, so the `dummy0` interface stays reachable from the container (via pasta) but not from the network. Bind MCP servers to `172.29.0.1:<port>` on the host and point the container's MCP client config at that address.
+
 ## Included Tools
 
 - **Git ecosystem**: git, git-lfs, gh, glab, gitea-tea
