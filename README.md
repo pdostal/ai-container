@@ -24,6 +24,7 @@ The image creates a `coder` user with UID/GID `1000:1000` by default. Pass `CODE
 
 The `ai-container` script automatically:
 - Mounts the current directory at the same absolute path inside the container, so `pwd` matches on both sides. If it's under your host `$HOME`, it's remapped onto `/home/coder` instead (e.g. host `~/external/ai-container` → container `/home/coder/external/ai-container`), so `~`-relative paths line up too. Refuses to run if the current directory is your entire `$HOME`.
+- Detects if the current directory is a git worktree and automatically rw-mounts the parent checkout (the repo containing the real `.git` directory) at the equivalent container path. Disable with `--no-worktree-mount`.
 - Uses `/home/coder` as the container home
 - Mounts configuration from the host home directory into `/home/coder`
 - Runs as the image's `coder` user
@@ -83,6 +84,22 @@ sudo firewall-cmd --reload
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
 - **AI Coding Assistants**: Claude Code, OpenCode
+
+## Custom Mounts
+
+Mount additional host directories into the container read-write, in addition to the current directory and any auto-detected git worktree parent:
+
+```bash
+./ai-container --mount-extra ~/repos/b
+```
+
+Repeatable for multiple directories:
+
+```bash
+./ai-container --mount-extra ~/repos/b --mount-extra ~/repos/shared-libs
+```
+
+Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.
 
 ## Custom Entrypoint
 

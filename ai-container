@@ -34,17 +34,21 @@ web_mode=false
 web_port=4996
 web_password=""
 web_username="coder"
+auto_worktree_mount=true
+extra_mount_paths=()
 remaining_args=()
 
 while true; do
   case "$1" in
-    --entrypoint)    entrypoint="$2"; shift 2 ;;
-    --claude)        entrypoint="${container_home}/.local/bin/claude"; shift ;;
-    --opencode)      entrypoint="${container_home}/.opencode/bin/opencode"; shift ;;
-    --web)           web_mode=true; shift ;;
-    --web-port)      web_port="$2"; shift 2 ;;
-    --web-password)  web_password="$2"; shift 2 ;;
-    --web-username)  web_username="$2"; shift 2 ;;
+    --entrypoint)       entrypoint="$2"; shift 2 ;;
+    --claude)           entrypoint="${container_home}/.local/bin/claude"; shift ;;
+    --opencode)         entrypoint="${container_home}/.opencode/bin/opencode"; shift ;;
+    --web)              web_mode=true; shift ;;
+    --web-port)         web_port="$2"; shift 2 ;;
+    --web-password)     web_password="$2"; shift 2 ;;
+    --web-username)     web_username="$2"; shift 2 ;;
+    --mount-extra)      extra_mount_paths+=("$2"); shift 2 ;;
+    --no-worktree-mount) auto_worktree_mount=false; shift ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -90,6 +94,13 @@ tea_config_target="${container_home}/.config/tea"
 aws_config="${host_home}/.aws"
 aws_config_target="${container_home}/.aws"
 
+map_to_container_path() {
+  case "$1" in
+    "$host_home"/*) echo "${container_home}${1#"$host_home"}" ;;
+    *) echo "$1" ;;
+  esac
+}
+
 if [[ -z "$PWD" ]]; then
   echo "✗ PWD is empty; refusing to bind-mount workdir" >&2
   exit 1
@@ -101,12 +112,19 @@ if [[ "$PWD" == "$host_home" ]]; then
   exit 1
 fi
 
-case "$PWD" in
-  "$host_home"/*)
-    target_workdir="${container_home}${PWD#"$host_home"}" ;;
-  *)
-    target_workdir="$PWD" ;;
-esac
+target_workdir="$(map_to_container_path "$PWD")"
+
+# Auto-detect git worktrees and queue the parent (main) checkout for mounting
+if [[ "$auto_worktree_mount" == "true" ]]; then
+  if common_dir=$(git -C "$PWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && \
+     git_dir=$(git -C "$PWD" rev-parse --path-format=absolute --git-dir 2>/dev/null); then
+    if [[ "$common_dir" != "$git_dir" ]]; then
+      worktree_parent="$(dirname "$common_dir")"
+      extra_mount_paths+=("$worktree_parent")
+      echo "✓ Detected git worktree; auto-mounting parent repo: $worktree_parent"
+    fi
+  fi
+fi
 
 args=(
   --rm
@@ -117,6 +135,25 @@ args=(
   -w "${target_workdir}"
   "--mount=type=bind,source=${PWD},target=${target_workdir}$([ -n "$selinux_label" ] && echo ",z")"
 )
+
+echo "✓ Mounting working directory (bind-mount, rw): ${PWD} → ${target_workdir}"
+
+# Extra rw mounts (manual --mount-extra and/or auto-detected worktree parent)
+declare -A mounted_targets=(["$target_workdir"]=1)
+for raw_path in "${extra_mount_paths[@]}"; do
+  if [[ ! -d "$raw_path" ]]; then
+    echo "✗ Extra mount path not found, skipping: $raw_path" >&2
+    continue
+  fi
+  resolved="$(cd "$raw_path" && pwd)"
+  extra_target="$(map_to_container_path "$resolved")"
+  if [[ -n "${mounted_targets[$extra_target]:-}" ]]; then
+    continue
+  fi
+  mounted_targets["$extra_target"]=1
+  echo "✓ Mounting extra directory (bind-mount, rw): ${resolved} → ${extra_target}"
+  args+=("--mount=type=bind,source=${resolved},target=${extra_target}$([ -n "$selinux_label" ] && echo ",z")")
+done
 
 # Google Cloud credentials
 if [[ -f "$gcloud_creds" ]]; then
@@ -297,8 +334,6 @@ if [[ -S "$gpg_socket" ]]; then
 else
   echo "✗ GPG agent socket not found: $gpg_socket" >&2
 fi
-
-echo "✓ Mounting working directory (bind-mount, rw): ${PWD} → ${target_workdir}"
 
 if [[ "$web_mode" == "true" ]]; then
   if [[ -z "$web_password" ]]; then
