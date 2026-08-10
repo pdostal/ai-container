@@ -5,7 +5,7 @@ RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/
 RUN zypper -n in git-core git-lfs gh glab gitea-tea bat less cnf cnf-bash openssh-clients gpg2 command-not-found hostname -busybox-hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
     python3 python3-pip python3-pipx python3-uv perl perl-Perl-Tidy ShellCheck npm jq python313-ruff python313-flake8 python313-yamllint yq iputils forgejo-cli kubernetes-client kustomize \
     gitea-tea golangci-lint python313-gitlint aws-cli python313-pylint python313-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
-    perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect
+    perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust
 RUN npm install -g markdownlint-cli perlnavigator-server
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
@@ -28,6 +28,7 @@ WORKDIR /home/coder
 USER coder
 RUN cargo install bugwarden ruoqa-mcp --locked && \
     cargo install --git https://github.com/mimi1vx/ruprogress-mcp --locked ruprogress-mcp
+RUN GOPROXY=direct go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN curl -fsSL https://opencode.ai/install | bash
 ENV PATH="/home/coder/.local/bin:$PATH"
