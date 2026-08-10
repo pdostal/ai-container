@@ -295,6 +295,14 @@ else
   echo "✗ BUGZILLA_API_KEY not set" >&2
 fi
 
+# Redmine API key
+if [[ -n "$REDMINE_API_KEY" ]]; then
+  echo "✓ Forwarding REDMINE_API_KEY environment variable"
+  args+=(-e REDMINE_API_KEY="${REDMINE_API_KEY}")
+else
+  echo "✗ REDMINE_API_KEY not set" >&2
+fi
+
 # osc config
 if [[ -d "$osc_config" ]]; then
   echo "✓ Mounting osc config directory (bind-mount, rw): $osc_config"
@@ -357,6 +365,7 @@ args+=("--userns=keep-id")
 
 echo "✓ Container name: ${container_name}"
 echo "▶ Using entrypoint: $entrypoint"
+echo "▶ Passing params: ${remaining_args[*]}"
 echo ""
 
 podman run --init --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"

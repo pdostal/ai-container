@@ -26,7 +26,8 @@ COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 RUN chown -R coder:$(id -gn coder) /home/coder
 WORKDIR /home/coder
 USER coder
-RUN cargo install bugwarden --locked
+RUN cargo install bugwarden ruoqa-mcp --locked && \
+    cargo install --git https://github.com/mimi1vx/ruprogress-mcp --locked ruprogress-mcp
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN curl -fsSL https://opencode.ai/install | bash
 ENV PATH="/home/coder/.local/bin:$PATH"
