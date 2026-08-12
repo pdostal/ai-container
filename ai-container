@@ -1,32 +1,14 @@
 #!/usr/bin/env bash
 
+# Interactive TUI entrypoints put the terminal into raw mode; if the
+# container exits abnormally without restoring it, the outer shell is left
+# broken (no echo, garbled prompt). Reset it unconditionally on exit.
+trap 'stty sane 2>/dev/null' EXIT
+
 host_home="${HOME}"
 container_home="/home/coder"
 platform="$(uname -s)"
 image="localhost/ai"
-
-# Detect SELinux
-selinux_label=""
-if [[ "$platform" != "Darwin" ]] && command -v sestatus &>/dev/null; then
-  selinux_status=$(sestatus 2>/dev/null)
-  if echo "$selinux_status" | grep -q "SELinux status:.*enabled"; then
-    mode=$(echo "$selinux_status" | grep "Current mode:" | awk '{print $3}')
-    if [[ -n "$mode" ]]; then
-      echo "✓ SELinux detected ($mode mode)"
-    else
-      echo "✓ SELinux detected (enabled)"
-    fi
-    selinux_label=":z"
-  else
-    echo "○ SELinux not detected"
-  fi
-else
-  echo "○ SELinux not detected (sestatus not available)"
-fi
-
-# Generate random container name (exclude ambiguous chars: 0, 1, i, l, o)
-suffix="$(LC_ALL=C tr -dc 'acdefghjkmnpqrstuvwxyz23456789' < /dev/urandom | head -c 3)"
-container_name="ai-${suffix}"
 
 # Parse command-line arguments
 entrypoint="${container_home}/.opencode/bin/opencode"
@@ -35,6 +17,7 @@ web_port=4996
 web_password=""
 web_username="coder"
 auto_worktree_mount=true
+debug_mode=false
 extra_mount_paths=()
 remaining_args=()
 
@@ -49,12 +32,43 @@ while true; do
     --web-username)     web_username="$2"; shift 2 ;;
     --mount-extra)      extra_mount_paths+=("$2"); shift 2 ;;
     --no-worktree-mount) auto_worktree_mount=false; shift ;;
+    --debug)            debug_mode=true; shift ;;
     --) shift; break ;;
     *) break ;;
   esac
 done
 
 remaining_args=("$@")
+
+# Debug-only output helpers. Mount/env-var/SELinux status noise is hidden
+# unless --debug is passed; podman and opencode also get extra debug logging.
+debug_echo() { [[ "$debug_mode" == "true" ]] && echo "$@"; }
+debug_echo_err() { [[ "$debug_mode" == "true" ]] && echo "$@" >&2; }
+
+# Detect SELinux
+selinux_label=""
+if [[ "$platform" != "Darwin" ]] && command -v sestatus &>/dev/null; then
+  selinux_status=$(sestatus 2>/dev/null)
+  if echo "$selinux_status" | grep -q "SELinux status:.*enabled"; then
+    mode=$(echo "$selinux_status" | grep "Current mode:" | awk '{print $3}')
+    if [[ -n "$mode" ]]; then
+      debug_echo "✓ SELinux detected ($mode mode)"
+    else
+      debug_echo "✓ SELinux detected (enabled)"
+    fi
+    selinux_label=":z"
+  else
+    debug_echo "○ SELinux not detected"
+  fi
+else
+  debug_echo "○ SELinux not detected (sestatus not available)"
+fi
+
+# Generate random container name (exclude ambiguous chars: 0, 1, i, l, o)
+# set +o pipefail guards against `tr` getting SIGPIPE'd when `head` closes
+# the pipe early, which would otherwise look like a failure under pipefail.
+suffix="$(set +o pipefail; LC_ALL=C tr -dc 'acdefghjkmnpqrstuvwxyz23456789' < /dev/urandom | head -c 3)"
+container_name="ai-${suffix}"
 
 gcloud_creds="${host_home}/.config/gcloud/application_default_credentials.json"
 gcloud_creds_target="${container_home}/.config/gcloud/application_default_credentials.json"
@@ -70,6 +84,22 @@ opencode_data="${host_home}/.local/share/opencode"
 opencode_data_target="${container_home}/.local/share/opencode"
 opencode_state="${host_home}/.local/state/opencode"
 opencode_state_target="${container_home}/.local/state/opencode"
+opencode_cache="${host_home}/.cache/opencode"
+opencode_cache_target="${container_home}/.cache/opencode"
+npm_cache="${host_home}/.npm"
+npm_cache_target="${container_home}/.npm"
+go_mod_cache="${host_home}/go/pkg/mod"
+go_mod_cache_target="${container_home}/go/pkg/mod"
+go_build_cache="${host_home}/.cache/go-build"
+go_build_cache_target="${container_home}/.cache/go-build"
+cargo_registry_cache="${host_home}/.cargo/registry"
+cargo_registry_cache_target="${container_home}/.cargo/registry"
+cargo_git_cache="${host_home}/.cargo/git"
+cargo_git_cache_target="${container_home}/.cargo/git"
+pip_cache="${host_home}/.cache/pip"
+pip_cache_target="${container_home}/.cache/pip"
+uv_cache="${host_home}/.cache/uv"
+uv_cache_target="${container_home}/.cache/uv"
 glab_config="${host_home}/.config/glab-cli"
 glab_config_alt="${host_home}/Library/Application Support/glab-cli"
 if [[ -d "$glab_config_alt" ]]; then
@@ -136,13 +166,13 @@ args=(
   "--mount=type=bind,source=${PWD},target=${target_workdir}$([ -n "$selinux_label" ] && echo ",z")"
 )
 
-echo "✓ Mounting working directory (bind-mount, rw): ${PWD} → ${target_workdir}"
+debug_echo "✓ Mounting working directory (bind-mount, rw): ${PWD} → ${target_workdir}"
 
 # Extra rw mounts (manual --mount-extra and/or auto-detected worktree parent)
 declare -A mounted_targets=(["$target_workdir"]=1)
 for raw_path in "${extra_mount_paths[@]}"; do
   if [[ ! -d "$raw_path" ]]; then
-    echo "✗ Extra mount path not found, skipping: $raw_path" >&2
+    debug_echo_err "✗ Extra mount path not found, skipping: $raw_path"
     continue
   fi
   resolved="$(cd "$raw_path" && pwd)"
@@ -151,13 +181,13 @@ for raw_path in "${extra_mount_paths[@]}"; do
     continue
   fi
   mounted_targets["$extra_target"]=1
-  echo "✓ Mounting extra directory (bind-mount, rw): ${resolved} → ${extra_target}"
+  debug_echo "✓ Mounting extra directory (bind-mount, rw): ${resolved} → ${extra_target}"
   args+=("--mount=type=bind,source=${resolved},target=${extra_target}$([ -n "$selinux_label" ] && echo ",z")")
 done
 
 # Google Cloud credentials
 if [[ -f "$gcloud_creds" ]]; then
-  echo "✓ Mounting Google Cloud credentials (bind-mount, ro): $gcloud_creds"
+  debug_echo "✓ Mounting Google Cloud credentials (bind-mount, ro): $gcloud_creds"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$gcloud_creds:$gcloud_creds_target:Z,ro")
   else
@@ -168,184 +198,247 @@ if [[ -f "$gcloud_creds" ]]; then
   args+=(-e VERTEX_LOCATION=global)
   args+=(-e VERTEXAI_PROJECT=REDACTED-GCP-PROJECT)
   args+=(-e VERTEXAI_LOCATION=global)
-  echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds_target"
-  echo "  → Setting GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT"
-  echo "  → Setting VERTEX_LOCATION=global"
-  echo "  → Setting VERTEXAI_PROJECT=REDACTED-GCP-PROJECT"
-  echo "  → Setting VERTEXAI_LOCATION=global"
+  debug_echo "  → Setting GOOGLE_APPLICATION_CREDENTIALS=$gcloud_creds_target"
+  debug_echo "  → Setting GOOGLE_CLOUD_PROJECT=REDACTED-GCP-PROJECT"
+  debug_echo "  → Setting VERTEX_LOCATION=global"
+  debug_echo "  → Setting VERTEXAI_PROJECT=REDACTED-GCP-PROJECT"
+  debug_echo "  → Setting VERTEXAI_LOCATION=global"
 else
-  echo "✗ Google Cloud credentials not found: $gcloud_creds" >&2
+  debug_echo_err "✗ Google Cloud credentials not found: $gcloud_creds"
 fi
 
 # Claude config directory
 if [[ -d "$claude_dir" ]]; then
-  echo "✓ Mounting Claude config directory (bind-mount, rw): $claude_dir"
+  debug_echo "✓ Mounting Claude config directory (bind-mount, rw): $claude_dir"
   args+=(-v "$claude_dir:$claude_dir_target${selinux_label}")
 else
-  echo "✗ Claude config directory not found: $claude_dir" >&2
+  debug_echo_err "✗ Claude config directory not found: $claude_dir"
 fi
 
 # Claude config file
 if [[ -f "$claude_json" ]]; then
-  echo "✓ Mounting Claude config file (bind-mount, rw): $claude_json"
+  debug_echo "✓ Mounting Claude config file (bind-mount, rw): $claude_json"
   args+=(-v "$claude_json:$claude_json_target${selinux_label}")
 else
-  echo "✗ Claude config file not found: $claude_json" >&2
+  debug_echo_err "✗ Claude config file not found: $claude_json"
 fi
 
 # GitHub CLI config
 if [[ -d "$gh_config" ]]; then
-  echo "✓ Mounting GitHub CLI config (bind-mount, ro): $gh_config"
+  debug_echo "✓ Mounting GitHub CLI config (bind-mount, ro): $gh_config"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$gh_config:$gh_config_target:Z,ro")
   else
     args+=(-v "$gh_config:$gh_config_target:ro")
   fi
 else
-  echo "✗ GitHub CLI config not found: $gh_config" >&2
+  debug_echo_err "✗ GitHub CLI config not found: $gh_config"
 fi
 
 # GitLab CLI config
 if [[ -d "$glab_config" ]]; then
-  echo "✓ Mounting GitLab CLI config (bind-mount, ro): $glab_config"
+  debug_echo "✓ Mounting GitLab CLI config (bind-mount, ro): $glab_config"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$glab_config:$glab_config_target:Z,ro")
   else
     args+=(-v "$glab_config:$glab_config_target:ro")
   fi
 else
-  echo "✗ GitLab CLI config not found: $glab_config" >&2
+  debug_echo_err "✗ GitLab CLI config not found: $glab_config"
 fi
 
 # OpenCode config
 if [[ -d "$opencode_config" ]]; then
-  echo "✓ Mounting OpenCode config directory (bind-mount, rw): $opencode_config"
+  debug_echo "✓ Mounting OpenCode config directory (bind-mount, rw): $opencode_config"
   args+=(-v "$opencode_config:$opencode_config_target${selinux_label}")
 else
-  echo "✗ OpenCode config directory not found: $opencode_config" >&2
+  debug_echo_err "✗ OpenCode config directory not found: $opencode_config"
 fi
 
 # OpenCode data
 if [[ -d "$opencode_data" ]]; then
-  echo "✓ Mounting OpenCode data directory (bind-mount, rw): $opencode_data"
+  debug_echo "✓ Mounting OpenCode data directory (bind-mount, rw): $opencode_data"
   args+=(-v "$opencode_data:$opencode_data_target${selinux_label}")
 else
-  echo "✗ OpenCode data directory not found: $opencode_data" >&2
+  debug_echo_err "✗ OpenCode data directory not found: $opencode_data"
 fi
 
 # OpenCode state
 if [[ -d "$opencode_state" ]]; then
-  echo "✓ Mounting OpenCode state directory (bind-mount, rw): $opencode_state"
+  debug_echo "✓ Mounting OpenCode state directory (bind-mount, rw): $opencode_state"
   args+=(-v "$opencode_state:$opencode_state_target${selinux_label}")
 else
-  echo "✗ OpenCode state directory not found: $opencode_state" >&2
+  debug_echo_err "✗ OpenCode state directory not found: $opencode_state"
+fi
+
+# OpenCode cache
+if [[ -d "$opencode_cache" ]]; then
+  debug_echo "✓ Mounting OpenCode cache directory (bind-mount, rw): $opencode_cache"
+  args+=(-v "$opencode_cache:$opencode_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ OpenCode cache directory not found: $opencode_cache"
+fi
+
+# All LSP servers opencode would otherwise auto-install at runtime are baked
+# into the image already; skip the network probing/download path entirely.
+args+=(-e OPENCODE_DISABLE_LSP_DOWNLOAD=true)
+debug_echo "  → Setting OPENCODE_DISABLE_LSP_DOWNLOAD=true"
+
+# Toolchain caches (npm, go, cargo, pip, uv)
+if [[ -d "$npm_cache" ]]; then
+  debug_echo "✓ Mounting npm cache directory (bind-mount, rw): $npm_cache"
+  args+=(-v "$npm_cache:$npm_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ npm cache directory not found: $npm_cache"
+fi
+
+if [[ -d "$go_mod_cache" ]]; then
+  debug_echo "✓ Mounting Go module cache directory (bind-mount, rw): $go_mod_cache"
+  args+=(-v "$go_mod_cache:$go_mod_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ Go module cache directory not found: $go_mod_cache"
+fi
+
+if [[ -d "$go_build_cache" ]]; then
+  debug_echo "✓ Mounting Go build cache directory (bind-mount, rw): $go_build_cache"
+  args+=(-v "$go_build_cache:$go_build_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ Go build cache directory not found: $go_build_cache"
+fi
+
+if [[ -d "$cargo_registry_cache" ]]; then
+  debug_echo "✓ Mounting Cargo registry cache directory (bind-mount, rw): $cargo_registry_cache"
+  args+=(-v "$cargo_registry_cache:$cargo_registry_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ Cargo registry cache directory not found: $cargo_registry_cache"
+fi
+
+if [[ -d "$cargo_git_cache" ]]; then
+  debug_echo "✓ Mounting Cargo git cache directory (bind-mount, rw): $cargo_git_cache"
+  args+=(-v "$cargo_git_cache:$cargo_git_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ Cargo git cache directory not found: $cargo_git_cache"
+fi
+
+if [[ -d "$pip_cache" ]]; then
+  debug_echo "✓ Mounting pip cache directory (bind-mount, rw): $pip_cache"
+  args+=(-v "$pip_cache:$pip_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ pip cache directory not found: $pip_cache"
+fi
+
+if [[ -d "$uv_cache" ]]; then
+  debug_echo "✓ Mounting uv cache directory (bind-mount, rw): $uv_cache"
+  args+=(-v "$uv_cache:$uv_cache_target${selinux_label}")
+else
+  debug_echo_err "✗ uv cache directory not found: $uv_cache"
 fi
 
 # SSH agent
 if [[ -n "$SSH_AUTH_SOCK" ]] && [[ -S "$SSH_AUTH_SOCK" ]]; then
-  echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
+  debug_echo "✓ Mounting SSH agent socket (bind-mount, rw): $SSH_AUTH_SOCK"
   args+=("--mount=type=bind,source=${SSH_AUTH_SOCK},target=${ssh_auth_sock_target}$([ -n "$selinux_label" ] && echo ",z")")
   args+=(-e SSH_AUTH_SOCK="${ssh_auth_sock_target}")
-  echo "  → Setting SSH_AUTH_SOCK=$ssh_auth_sock_target"
+  debug_echo "  → Setting SSH_AUTH_SOCK=$ssh_auth_sock_target"
 else
-  echo "✗ SSH agent socket not available" >&2
+  debug_echo_err "✗ SSH agent socket not available"
 fi
 
 # SSH known_hosts
 if [[ -f "$ssh_known_hosts" ]]; then
-  echo "✓ Mounting SSH known_hosts (bind-mount, ro): $ssh_known_hosts"
+  debug_echo "✓ Mounting SSH known_hosts (bind-mount, ro): $ssh_known_hosts"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:Z,ro")
   else
     args+=(-v "$ssh_known_hosts:$ssh_known_hosts_target:ro")
   fi
 else
-  echo "✗ SSH known_hosts not found: $ssh_known_hosts" >&2
+  debug_echo_err "✗ SSH known_hosts not found: $ssh_known_hosts"
 fi
 
 # Git config
 if [[ -f "$gitconfig" ]]; then
-  echo "✓ Mounting Git config (bind-mount, ro): $gitconfig"
+  debug_echo "✓ Mounting Git config (bind-mount, ro): $gitconfig"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$gitconfig:$gitconfig_target:Z,ro")
   else
     args+=(-v "$gitconfig:$gitconfig_target:ro")
   fi
 else
-  echo "✗ Git config not found: $gitconfig" >&2
+  debug_echo_err "✗ Git config not found: $gitconfig"
 fi
 
 # openQA config directory
 if [[ -d "$openqa_config" ]]; then
-  echo "✓ Mounting openQA config directory (bind-mount, ro): $openqa_config"
+  debug_echo "✓ Mounting openQA config directory (bind-mount, ro): $openqa_config"
   if [[ -n "$selinux_label" ]]; then
     args+=(-v "$openqa_config:$openqa_config_target:Z,ro")
   else
     args+=(-v "$openqa_config:$openqa_config_target:ro")
   fi
 else
-  echo "✗ openQA config directory not found: $openqa_config" >&2
+  debug_echo_err "✗ openQA config directory not found: $openqa_config"
 fi
 
 # Bugzilla API key
 if [[ -n "$BUGZILLA_API_KEY" ]]; then
-  echo "✓ Forwarding BUGZILLA_API_KEY environment variable"
+  debug_echo "✓ Forwarding BUGZILLA_API_KEY environment variable"
   args+=(-e BUGZILLA_API_KEY="${BUGZILLA_API_KEY}")
 else
-  echo "✗ BUGZILLA_API_KEY not set" >&2
+  debug_echo_err "✗ BUGZILLA_API_KEY not set"
 fi
 
 # Redmine API key
 if [[ -n "$REDMINE_API_KEY" ]]; then
-  echo "✓ Forwarding REDMINE_API_KEY environment variable"
+  debug_echo "✓ Forwarding REDMINE_API_KEY environment variable"
   args+=(-e REDMINE_API_KEY="${REDMINE_API_KEY}")
 else
-  echo "✗ REDMINE_API_KEY not set" >&2
+  debug_echo_err "✗ REDMINE_API_KEY not set"
 fi
 
 # osc config
 if [[ -d "$osc_config" ]]; then
-  echo "✓ Mounting osc config directory (bind-mount, rw): $osc_config"
+  debug_echo "✓ Mounting osc config directory (bind-mount, rw): $osc_config"
   args+=(-v "$osc_config:$osc_config_target${selinux_label}")
 else
-  echo "✗ osc config directory not found: $osc_config" >&2
+  debug_echo_err "✗ osc config directory not found: $osc_config"
 fi
 
 # tea config
 if [[ -d "$tea_config" ]]; then
-  echo "✓ Mounting tea config directory (bind-mount, rw): $tea_config"
+  debug_echo "✓ Mounting tea config directory (bind-mount, rw): $tea_config"
   args+=(-v "$tea_config:$tea_config_target${selinux_label}")
 else
-  echo "✗ tea config directory not found: $tea_config" >&2
+  debug_echo_err "✗ tea config directory not found: $tea_config"
 fi
 
 # AWS config
 if [[ -d "$aws_config" ]]; then
-  echo "✓ Mounting AWS config directory (bind-mount, rw): $aws_config"
+  debug_echo "✓ Mounting AWS config directory (bind-mount, rw): $aws_config"
   args+=(-v "$aws_config:$aws_config_target${selinux_label}")
 else
-  echo "✗ AWS config directory not found: $aws_config" >&2
+  debug_echo_err "✗ AWS config directory not found: $aws_config"
 fi
 
 # Kubernetes config
 if [[ -d "$kube_config" ]]; then
-  echo "✓ Mounting Kubernetes config (bind-mount, rw): $kube_config"
+  debug_echo "✓ Mounting Kubernetes config (bind-mount, rw): $kube_config"
   args+=(-v "$kube_config:$kube_config_target${selinux_label}")
 else
-  echo "✗ Kubernetes config not found: $kube_config" >&2
+  debug_echo_err "✗ Kubernetes config not found: $kube_config"
 fi
 
 # GPG agent
 if [[ -S "$gpg_socket" ]]; then
-  echo "✓ Mounting GPG agent socket (bind-mount, rw): $gpg_socket"
+  debug_echo "✓ Mounting GPG agent socket (bind-mount, rw): $gpg_socket"
   args+=("--mount=type=bind,source=${gpg_socket},target=${gpg_socket_target}$([ -n "$selinux_label" ] && echo ",z")")
 else
-  echo "✗ GPG agent socket not found: $gpg_socket" >&2
+  debug_echo_err "✗ GPG agent socket not found: $gpg_socket"
 fi
 
 if [[ "$web_mode" == "true" ]]; then
   if [[ -z "$web_password" ]]; then
-    web_password="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
+    web_password="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
   fi
   args+=(-d)
   args+=(-p "${web_port}:${web_port}")
@@ -355,17 +448,30 @@ if [[ "$web_mode" == "true" ]]; then
   echo "✓ Web mode: http://$(hostname -I | awk '{print $1}'):${web_port}"
   echo "✓ Web username: ${web_username}"
   echo "✓ Web password: ${web_password}"
-else
+elif [[ -t 0 && -t 1 ]]; then
   args+=(-it)
+else
+  args+=(-i)
+  debug_echo "○ No TTY detected; running without -t"
 fi
 
 args+=("--network=pasta")
 args+=("--userns=keep-id")
 #args+=("--runtime crun-vm")
 
+# Debug mode: verbose podman engine logging, plus opencode's own debug-level
+# startup log streamed live instead of only landing in its log file.
+podman_debug_args=()
+if [[ "$debug_mode" == "true" ]]; then
+  podman_debug_args=(--log-level=debug)
+  if [[ "$entrypoint" == *"/opencode" ]]; then
+    remaining_args=(--print-logs --log-level DEBUG "${remaining_args[@]}")
+  fi
+fi
+
 echo "✓ Container name: ${container_name}"
 echo "▶ Using entrypoint: $entrypoint"
 echo "▶ Passing params: ${remaining_args[*]}"
 echo ""
 
-podman run --init --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"
+podman run "${podman_debug_args[@]}" --init --entrypoint "$entrypoint" "${args[@]}" "$image" "${remaining_args[@]}"
