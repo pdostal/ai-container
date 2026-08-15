@@ -7,9 +7,13 @@ RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.or
 RUN zypper -n in git-core git-lfs gh glab gitea-tea bat less cnf cnf-bash openssh-clients gpg2 command-not-found hostname -busybox-hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
     python3 python3-pip python3-pipx python3-uv perl perl-Perl-Tidy ShellCheck npm jq python313-ruff python313-flake8 python313-yamllint yq iputils forgejo-cli kubernetes-client kustomize \
     gitea-tea golangci-lint python313-gitlint aws-cli python313-pylint python313-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
-    perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip \
-    gopls lua-language-server clang-tools ruby taplo java-21-openjdk-headless php8 swift-lang
-# ruby-lsp is a gem, not packaged; install it once ruby is present.
+    perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep \
+    gopls lua-language-server clang-tools ruby taplo java-21-openjdk-headless php8 swift-lang \
+    php8-ctype php8-curl php8-dom php8-fileinfo php8-gd \
+    php8-mbstring php8-openssl php8-pdo php8-posix php8-zip php8-zlib \
+    php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis \
+    php8-xmlreader php8-xmlwriter php8-sqlite php8-tokenizer php8-phar \
+    php-composer2 php8-smbclient php8-ldap php8-mysql php8-pgsql
 RUN gem install ruby-lsp
 RUN npm install -g markdownlint-cli perlnavigator-server \
     pyright typescript typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
