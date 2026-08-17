@@ -12,9 +12,11 @@ This repository contains a Containerfile that defines AI Coding Assistants conta
 podman build -t ai -f Containerfile .
 ```
 
+Also buildable with Apple's `container` tool on macOS (`container build -t ai -f Containerfile .`).
+
 ## Run
 
-Use `./ai-container` script for the full setup with credentials and agent forwarding.
+Use `./ai-container` script for the full setup with credentials and agent forwarding. It supports both `podman` and macOS's native `container` runtime (auto-detected, or forced via `--runtime`/`AI_CONTAINER_RUNTIME`); see `README.md` for the differences between the two.
 
 ## Code Quality
 
