@@ -531,8 +531,7 @@ if [[ "$debug_mode" == "true" ]]; then
   fi
 fi
 
-echo "✓ Runtime: ${engine}"
-echo "✓ Container name: ${container_name}"
+echo "✓ ${engine} container: ${container_name}"
 echo "▶ Using entrypoint: $entrypoint"
 echo "▶ Passing params: ${remaining_args[*]}"
 echo ""
