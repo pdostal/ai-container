@@ -18,7 +18,7 @@ container builder start
 ## Build
 
 ```bash
-podman build --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
+podman build --pull=always --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
 ```
 
 Or with Apple's `container` tool:
