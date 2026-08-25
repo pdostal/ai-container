@@ -1,0 +1,73 @@
+[project]
+name = "ai-container"
+version = "0.1.0"
+description = "Launcher for the containerized AI Coding Assistants environment (podman/container)"
+readme = "README.md"
+authors = [
+    { name = "Pavel Dostál", email = "pdostal@suse.cz" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.15.1",
+    "rich>=13.9.4",
+]
+
+[project.scripts]
+ai-container = "ai_container.cli:run_app"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-subprocess>=1.5.2",
+    "hypothesis>=6.122.3",
+    "mypy>=1.13.0",
+    "ruff>=0.16.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "UP",            # pyupgrade
+    "B",             # bugbear
+    "C4",            # comprehensions
+    "SIM",           # simplify
+    "RUF",           # ruff-specific
+    "PTH",           # prefer pathlib over os.path
+    "S",             # bandit-lite security checks (subprocess-heavy tool)
+]
+ignore = [
+    "S603", # subprocess call with untrusted input - this tool's whole job is invoking podman/container
+    "S607", # partial executable path - we intentionally resolve via PATH
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S603", "S607", "S104", "S105", "S106"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=ai_container --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/ai_container"]
+branch = true
