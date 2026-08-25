@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to AI coding assistants (Claude Code, OpenCode) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
-## Overview
+See [`AGENTS.md`](AGENTS.md) for the full project overview, build/test/lint commands, project structure, and code style — it's the canonical doc, kept in sync for every AI assistant (Claude Code, OpenCode, etc.).
 
-This repository contains a Containerfile that defines AI Coding Assistants container environment. Changes here affect the runtime environment.
+## Containerfile quick reference
 
-## Build
+The `Containerfile` builds the *guest* AI Coding Assistants container image (independent of the Python launcher in `src/ai_container/`):
 
 ```bash
 podman build -t ai -f Containerfile .
@@ -14,10 +14,7 @@ podman build -t ai -f Containerfile .
 
 Also buildable with Apple's `container` tool on macOS (`container build -t ai -f Containerfile .`).
 
-## Run
+## Code quality
 
-Use `./ai-container` script for the full setup with credentials and agent forwarding. It supports both `podman` and macOS's native `container` runtime (auto-detected, or forced via `--runtime`/`AI_CONTAINER_RUNTIME`); see `README.md` for the differences between the two.
-
-## Code Quality
-
-- Always run `shellcheck` on shell scripts after making changes to ensure code quality and catch common issues.
+- Python changes: `uv run ruff format .`, `uv run ruff check .`, `uv run mypy`, `uv run pytest` (see `AGENTS.md`).
+- Shell scripts (`Containerfile` is not shell, but any `.sh` files added under it should be): always run `shellcheck` after making changes.
