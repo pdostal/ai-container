@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from ai_container import __version__, git_utils
 from ai_container import cli as cli_mod
-from ai_container import git_utils
 
 runner = CliRunner()
 
@@ -29,6 +29,20 @@ def test_help_shows_dash_dash_usage() -> None:
     result = runner.invoke(cli_mod.app, ["--help"])
     assert result.exit_code == 0
     assert "tool_args" in result.output
+
+
+def test_help_output_has_no_box_drawing_borders() -> None:
+    result = runner.invoke(cli_mod.app, ["--help"])
+    assert result.exit_code == 0
+    assert not any(char in result.output for char in "\u256d\u2570\u2502\u2500")
+
+
+@pytest.mark.parametrize("flag", ["--version", "-v"])
+def test_version_prints_and_exits_before_any_engine_work(flag: str) -> None:
+    result = runner.invoke(cli_mod.app, [flag])
+    assert result.exit_code == 0
+    assert "ai-container" in result.output
+    assert __version__ in result.output
 
 
 def test_unknown_runtime_errors(isolated_home: Path, workdir: Path, fake_engine_path: Path) -> None:

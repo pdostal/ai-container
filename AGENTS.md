@@ -45,6 +45,7 @@ src/ai_container/
   web.py         --web mode (random password, host IP detection, banner)
   naming.py      random container names / web passwords
   runner.py      final argv assembly + subprocess execution + `stty sane` cleanup
+  rich_patches.py  strips typer's Rich help/error box borders while keeping color (see its docstring)
 tests/           one test module per src module, plus tests/test_cli.py for end-to-end CLI behavior
 ```
 

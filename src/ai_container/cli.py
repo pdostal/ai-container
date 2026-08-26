@@ -28,11 +28,13 @@ from typing import Annotated
 
 import typer
 
+from . import __version__, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
 from . import engine as engine_ops
-from . import git_utils, mounts, paths, selinux, ssh_agent, web
 from .console import Reporter
 from .naming import random_container_name
 from .runner import build_argv, run, spawn_relay_chmod_fix
+
+rich_patches.apply()
 
 app = typer.Typer(
     add_completion=False,
@@ -57,8 +59,24 @@ class CliError(Exception):
     """A user-facing error that should exit(1) with a plain message."""
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"ai-container {__version__}")
+        raise typer.Exit()
+
+
 @app.command()
 def main(
+    version: Annotated[
+        bool | None,
+        typer.Option(
+            "--version",
+            "-v",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show the installed ai-container version and exit.",
+        ),
+    ] = None,
     entrypoint: Annotated[
         str | None,
         typer.Option(
