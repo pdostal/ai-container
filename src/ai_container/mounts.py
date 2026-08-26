@@ -13,8 +13,6 @@ from . import selinux
 from .console import Reporter
 from .models import MountAccess, MountKind, MountSpec
 
-GCLOUD_PROJECT = "REDACTED-GCP-PROJECT"
-
 
 def glab_config_dir(host_home: Path, *, host_platform: str) -> Path:
     if host_platform == "Darwin":
@@ -73,14 +71,16 @@ def gcloud_mount(host_home: Path, container_home: Path) -> MountSpec:
     )
 
 
-def gcloud_env(container_target: Path) -> dict[str, str]:
-    return {
+def gcloud_env(container_target: Path, project: str | None) -> dict[str, str]:
+    env = {
         "GOOGLE_APPLICATION_CREDENTIALS": str(container_target),
-        "GOOGLE_CLOUD_PROJECT": GCLOUD_PROJECT,
         "VERTEX_LOCATION": "global",
-        "VERTEXAI_PROJECT": GCLOUD_PROJECT,
         "VERTEXAI_LOCATION": "global",
     }
+    if project:
+        env["GOOGLE_CLOUD_PROJECT"] = project
+        env["VERTEXAI_PROJECT"] = project
+    return env
 
 
 def _volume_flag(spec: MountSpec, *, selinux_enabled: bool) -> str:

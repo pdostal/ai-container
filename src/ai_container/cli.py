@@ -357,7 +357,10 @@ def _apply_gcloud(
     reporter.debug_ok(f"Mounting Google Cloud credentials (bind-mount, ro): {spec.host}")
     suffix = selinux.volume_ro_suffix(selinux_enabled)
     args.extend(["-v", f"{spec.host}:{spec.container}{suffix}"])
-    for key, value in mounts.gcloud_env(spec.container).items():
+    project = os.environ.get("GCLOUD_PROJECT")
+    if not project:
+        reporter.debug_fail("GCLOUD_PROJECT not set")
+    for key, value in mounts.gcloud_env(spec.container, project).items():
         args.extend(["-e", f"{key}={value}"])
         reporter.debug_detail(f"Setting {key}={value}")
 

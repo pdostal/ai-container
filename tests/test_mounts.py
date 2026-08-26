@@ -80,6 +80,12 @@ def test_apply_mount_adds_ro_flag_with_selinux(tmp_path: Path) -> None:
 def test_gcloud_mount_and_env(tmp_path: Path) -> None:
     spec = mounts.gcloud_mount(tmp_path, CONTAINER_HOME)
     assert spec.host == tmp_path / ".config/gcloud/application_default_credentials.json"
-    env = mounts.gcloud_env(spec.container)
+    env = mounts.gcloud_env(spec.container, "some-project")
     assert env["GOOGLE_APPLICATION_CREDENTIALS"] == str(spec.container)
-    assert env["GOOGLE_CLOUD_PROJECT"] == mounts.GCLOUD_PROJECT
+    assert env["GOOGLE_CLOUD_PROJECT"] == "some-project"
+
+
+def test_gcloud_env_omits_project_vars_when_unset(tmp_path: Path) -> None:
+    env = mounts.gcloud_env(CONTAINER_HOME / "creds.json", None)
+    assert "GOOGLE_CLOUD_PROJECT" not in env
+    assert "VERTEXAI_PROJECT" not in env
