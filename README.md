@@ -195,12 +195,12 @@ Bind your MCP server to `127.0.0.1` on the host, then point the container's MCP 
 
 ## Included Tools
 
-- **Git ecosystem**: git, git-lfs, gh, glab, gitea-tea
+- **Git ecosystem**: git, git-lfs, git-filter-repo, gh, glab, gitea-tea
 - **Python**: python3, uv, ruff, flake8, yamllint
 - **Perl**: perl, perltidy
 - **Linters**: shellcheck, markdownlint-cli
 - **Node.js**: npm, npx
-- **Security**: gpg2, openssh-clients
+- **Security**: gpg2, openssh-clients, gitleaks
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
 - **AI Coding Assistants**: Claude Code, OpenCode
@@ -218,7 +218,7 @@ uv run mypy                # type-check (strict)
 uv run pytest               # test suite (pytest + coverage)
 ```
 
-Git hooks for this repo are defined declaratively in [`.githooks.config`](.githooks.config) (pre-commit: `ruff`; pre-push: `mypy` + `pytest`), using Git ≥2.55's config-driven hooks (`hook.<name>.*`, see `git help hook`). Git only honors `hook.*` settings from *protected* configuration (system/global/command scopes, never local repo config), so the tracked config file does nothing until you opt in once per clone:
+Git hooks for this repo are defined declaratively in [`.githooks.config`](.githooks.config) (pre-commit: `ruff`, `scripts/check_hardcoded_config.py`, `gitleaks`; pre-push: `mypy` + `pytest`), using Git ≥2.55's config-driven hooks (`hook.<name>.*`, see `git help hook`). Git only honors `hook.*` settings from *protected* configuration (system/global/command scopes, never local repo config), so the tracked config file does nothing until you opt in once per clone:
 
 ```bash
 git config set --local include.path ../.githooks.config

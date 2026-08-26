@@ -1,7 +1,7 @@
 FROM registry.opensuse.org/opensuse/tumbleweed:latest
 ARG CODER_UID=1000
 ARG CODER_GID=1000
-RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo gh glab gitea-tea bat less cnf cnf-bash openssh-clients cnf hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
+RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo gitleaks gh glab gitea-tea bat less cnf cnf-bash openssh-clients cnf hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy ShellCheck nodejs26 npm26 jq python314-ruff python314-flake8 python314-yamllint yq iputils forgejo-cli kubernetes-client kustomize \
     gitea-tea golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep \

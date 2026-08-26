@@ -25,7 +25,7 @@ uv run pytest                 # full test suite, with coverage report
 uv run pytest tests/test_cli.py -k web  # run a subset
 ```
 
-CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` on every push/PR. Keep all four green before considering work done.
+CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, `mypy`, `pytest`, `scripts/check_hardcoded_config.py`, and a `gitleaks` scan on every push/PR. Keep all of these green before considering work done.
 
 Git hooks are config-driven (`.githooks.config`, Git ≥2.55's `hook.<name>.*`); see the "Development" section of `README.md` for the one-time opt-in command. If they're enabled locally, `git commit`/`git push` run the same checks as CI.
 
@@ -47,6 +47,8 @@ src/ai_container/
   runner.py      final argv assembly + subprocess execution + `stty sane` cleanup
   rich_patches.py  strips typer's Rich help/error box borders while keeping color (see its docstring)
 tests/           one test module per src module, plus tests/test_cli.py for end-to-end CLI behavior
+scripts/
+  check_hardcoded_config.py  AST-based guard against hardcoded secret/config-shaped constants
 ```
 
 ## Code style

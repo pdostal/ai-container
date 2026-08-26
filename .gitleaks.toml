@@ -1,0 +1,10 @@
+title = "ai-container gitleaks config"
+
+[extend]
+useDefault = true
+
+# Test fixtures use obviously-fake secrets (never real credentials); skip
+# them so the default ruleset doesn't flag its own test data.
+[[allowlists]]
+description = "Fake secrets used only in the test suite"
+paths = ['''tests/.*''']
