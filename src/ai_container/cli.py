@@ -31,6 +31,7 @@ import typer
 from . import __version__, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
 from . import engine as engine_ops
 from .console import Reporter
+from .models import Engine
 from .naming import random_container_name
 from .runner import build_argv, run, spawn_relay_chmod_fix
 
@@ -123,6 +124,14 @@ def main(
     debug: Annotated[
         bool, typer.Option("--debug", help="Verbose engine + mount debug output.")
     ] = False,
+    microvm: Annotated[
+        bool,
+        typer.Option(
+            "--microvm/--no-microvm",
+            help="Run the container in a KVM microVM via crun's krun runtime "
+            "(needs the crun-krun package and /dev/kvm). Podman only.",
+        ),
+    ] = False,
     runtime: Annotated[
         str | None,
         typer.Option(
@@ -175,6 +184,11 @@ def main(
             host_platform=host_platform,
         )
         engine_ops.ensure_available(selected_engine)
+        if microvm and selected_engine is Engine.CONTAINER:
+            raise CliError(
+                "--microvm is only supported with the podman engine "
+                "(Apple's container tool already runs each container in its own VM)."
+            )
         try:
             cwd = Path.cwd()
         except (FileNotFoundError, OSError) as exc:
@@ -271,6 +285,7 @@ def main(
         reporter.debug_detail("\u25cb No TTY detected; running without -t")
 
     args.extend(engine_ops.network_args(selected_engine))
+    args.extend(engine_ops.oci_runtime_args(selected_engine, microvm=microvm))
 
     engine_debug_args: list[str] = []
     if debug:

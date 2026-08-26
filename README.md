@@ -20,7 +20,7 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
 ## Prerequisites
 
 ```bash
-sudo transactional-update pkg install crun libkrun1 libkrunfw5 slirp4netns
+sudo transactional-update pkg install crun crun-krun libkrun1 libkrunfw5 slirp4netns
 ```
 
 On macOS, you need either [Podman](https://podman.io) (running via `podman machine`) or Apple's native [`container`](https://github.com/apple/container) tool (Apple silicon, macOS 26+). For `container`, install it and start its services once:
@@ -89,6 +89,7 @@ Run `ai-container --help` for the full, coloured option reference.
 The launcher automatically:
 
 - Picks a container runtime: `podman` by default, falling back to Apple's `container` on macOS if `podman` isn't installed. Override with `--runtime podman|container` or the `AI_CONTAINER_RUNTIME` environment variable.
+- Optionally runs the container inside a KVM microVM instead of plain namespaces, via crun's `krun` OCI runtime. Enable with `--microvm` (podman only; needs the `crun-krun` package and `/dev/kvm` access).
 - Mounts the current directory at the same absolute path inside the container, so `pwd` matches on both sides. If it's under your host `$HOME`, it's remapped onto `/home/coder` instead (e.g. host `~/external/ai-container` → container `/home/coder/external/ai-container`), so `~`-relative paths line up too. Refuses to run if the current directory is your entire `$HOME`.
 - Detects if the current directory is a git worktree and automatically rw-mounts the parent checkout (the repo containing the real `.git` directory) at the equivalent container path. Disable with `--no-worktree-mount`.
 - Uses `/home/coder` as the container home.
@@ -101,6 +102,9 @@ The launcher automatically:
 - Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
 - Optionally mounts Google Cloud credentials when available.
 - Assigns a random container name (e.g. `ai-x7q`) printed on every run.
+
+> [!NOTE]
+> `--microvm` is new and only lightly tested: it adds `--annotation krun.use_passt=1` so pasta networking (see [Network Configuration](#network-configuration)) routes into the guest microVM, but this hasn't been verified on real hardware. If host-bound services aren't reachable from inside a `--microvm` container, that annotation is the first thing to check.
 
 > [!NOTE]
 > GPG agent forwarding isn't supported: Apple's `container` tool can't bind-mount a host AF_UNIX socket file into its VM (the socket node isn't accessible through its virtiofs share), so signing commits with a forwarded host agent doesn't work from inside the container on either runtime.

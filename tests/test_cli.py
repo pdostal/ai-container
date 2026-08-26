@@ -91,6 +91,26 @@ def test_happy_path_builds_expected_argv(
     assert "HOME=/home/coder" in argv
 
 
+def test_microvm_adds_krun_runtime_and_passt_annotation(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--microvm"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--runtime" in argv
+    assert argv[argv.index("--runtime") + 1] == "krun"
+    assert "--annotation" in argv
+    assert argv[argv.index("--annotation") + 1] == "krun.use_passt=1"
+
+
+def test_microvm_rejected_on_container_engine(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "container", "--microvm"])
+    assert result.exit_code == 1
+    assert "--microvm is only supported with the podman engine" in result.output
+
+
 def test_short_unknown_option_forwarded_without_dash_dash(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

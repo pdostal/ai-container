@@ -66,6 +66,16 @@ def network_args(engine: Engine) -> list[str]:
     return []
 
 
+def oci_runtime_args(engine: Engine, *, microvm: bool) -> list[str]:
+    """`krun` (crun+libkrun) runs the container in a KVM microVM instead of
+    plain namespaces. `use_passt` is needed for pasta (see network_args)
+    traffic to reach the guest. No equivalent exists for `container`.
+    """
+    if engine is Engine.PODMAN and microvm:
+        return ["--runtime", "krun", "--annotation", "krun.use_passt=1"]
+    return []
+
+
 def tty_args(engine: Engine) -> list[str]:
     return ["-it"] if engine is Engine.PODMAN else ["-i", "-t"]
 

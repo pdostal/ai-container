@@ -89,3 +89,20 @@ def test_tty_args_differ_per_engine() -> None:
 def test_debug_args_differ_per_engine() -> None:
     assert engine.debug_args(Engine.PODMAN) == ["--log-level=debug"]
     assert engine.debug_args(Engine.CONTAINER) == ["--debug"]
+
+
+def test_oci_runtime_args_podman_microvm() -> None:
+    assert engine.oci_runtime_args(Engine.PODMAN, microvm=True) == [
+        "--runtime",
+        "krun",
+        "--annotation",
+        "krun.use_passt=1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("selected", "microvm"),
+    [(Engine.PODMAN, False), (Engine.CONTAINER, True), (Engine.CONTAINER, False)],
+)
+def test_oci_runtime_args_empty_otherwise(selected: Engine, microvm: bool) -> None:
+    assert engine.oci_runtime_args(selected, microvm=microvm) == []
