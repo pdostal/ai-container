@@ -79,7 +79,9 @@ def gcloud_env(container_target: Path, project: str | None) -> dict[str, str]:
     }
     if project:
         env["GOOGLE_CLOUD_PROJECT"] = project
+        env["GOOGLE_VERTEX_PROJECT"] = project
         env["VERTEXAI_PROJECT"] = project
+        env["GCLOUD_PROJECT"] = project
     return env
 
 

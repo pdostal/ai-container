@@ -270,6 +270,7 @@ def main(
     for key, value in forwarding.env.items():
         args.extend(["-e", f"{key}={value}"])
 
+    _forward_env(args, "ANTHROPIC_VERTEX_PROJECT_ID", reporter)
     _forward_env(args, "BUGZILLA_API_KEY", reporter)
     _forward_env(args, "REDMINE_API_KEY", reporter)
 
@@ -363,9 +364,9 @@ def _apply_gcloud(
     reporter.debug_ok(f"Mounting Google Cloud credentials (bind-mount, ro): {spec.host}")
     suffix = selinux.volume_ro_suffix(selinux_enabled)
     args.extend(["-v", f"{spec.host}:{spec.container}{suffix}"])
-    project = os.environ.get("GCLOUD_PROJECT")
+    project = os.environ.get("GCLOUD_PROJECT") or os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
     if not project:
-        reporter.debug_fail("GCLOUD_PROJECT not set")
+        reporter.debug_fail("GCLOUD_PROJECT / ANTHROPIC_VERTEX_PROJECT_ID not set")
     for key, value in mounts.gcloud_env(spec.container, project).items():
         args.extend(["-e", f"{key}={value}"])
         reporter.debug_detail(f"Setting {key}={value}")

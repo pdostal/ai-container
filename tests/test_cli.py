@@ -287,6 +287,8 @@ def test_gcloud_credentials_mounted_when_present(
     (argv,) = captured_run
     assert any("application_default_credentials.json" in flag for flag in argv)
     assert "GOOGLE_CLOUD_PROJECT=some-project" in argv
+    assert "GOOGLE_VERTEX_PROJECT=some-project" in argv
+    assert "GCLOUD_PROJECT=some-project" in argv
 
 
 def test_gcloud_project_env_vars_omitted_when_unset(
@@ -297,13 +299,16 @@ def test_gcloud_project_env_vars_omitted_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GCLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("ANTHROPIC_VERTEX_PROJECT_ID", raising=False)
     gcloud_dir = isolated_home / ".config/gcloud"
     gcloud_dir.mkdir(parents=True)
     (gcloud_dir / "application_default_credentials.json").write_text("{}")
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
     assert not any(flag.startswith("GOOGLE_CLOUD_PROJECT=") for flag in argv)
+    assert not any(flag.startswith("GOOGLE_VERTEX_PROJECT=") for flag in argv)
     assert not any(flag.startswith("VERTEXAI_PROJECT=") for flag in argv)
+    assert not any(flag.startswith("GCLOUD_PROJECT=") for flag in argv)
 
 
 def test_extra_mount_path_that_does_not_exist_is_skipped(
