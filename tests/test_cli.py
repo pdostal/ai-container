@@ -111,6 +111,96 @@ def test_microvm_rejected_on_container_engine(
     assert "--microvm is only supported with the podman engine" in result.output
 
 
+def test_add_host_flag_adds_flag_on_podman(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--add-host", "foo.example.com:1.2.3.4"]
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--add-host=foo.example.com:1.2.3.4" in argv
+
+
+def test_add_host_rejected_on_container_engine(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "container", "--add-host", "foo.example.com:1.2.3.4"]
+    )
+    assert result.exit_code == 1
+    assert "--add-host is only supported with the podman engine" in result.output
+
+
+def test_add_host_rejects_malformed_entry(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--add-host", "no-colon-here"])
+    assert result.exit_code == 1
+    assert "Invalid --add-host entry" in result.output
+
+
+def test_add_host_from_config_file_applied_on_podman(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text('add_hosts = ["cfg.example.com:9.9.9.9"]\n')
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--add-host=cfg.example.com:9.9.9.9" in argv
+
+
+def test_add_host_from_config_file_silently_skipped_on_container(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text('add_hosts = ["cfg.example.com:9.9.9.9"]\n')
+    result = runner.invoke(cli_mod.app, ["--runtime", "container"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert not any("cfg.example.com" in arg for arg in argv)
+
+
+def test_add_host_config_and_cli_combine_and_dedupe(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text(
+        'add_hosts = ["cfg.example.com:9.9.9.9", "shared.example.com:5.5.5.5"]\n'
+    )
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "--runtime",
+            "podman",
+            "--add-host",
+            "shared.example.com:5.5.5.5",
+            "--add-host",
+            "cli.example.com:8.8.8.8",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--add-host=cfg.example.com:9.9.9.9" in argv
+    assert "--add-host=cli.example.com:8.8.8.8" in argv
+    assert argv.count("--add-host=shared.example.com:5.5.5.5") == 1
+
+
+def test_add_host_from_malformed_config_file_errors(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text("this is not [valid toml\n")
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 1
+    assert "Failed to parse" in result.output
+
+
 def test_short_unknown_option_forwarded_without_dash_dash(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

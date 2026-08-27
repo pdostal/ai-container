@@ -11,7 +11,9 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
   - [Basic usage](#basic-usage)
   - [Web mode](#web-mode)
   - [Custom mounts](#custom-mounts)
+  - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom entrypoint](#custom-entrypoint)
+- [Configuration file](#configuration-file)
 - [What the launcher does](#what-the-launcher-does)
 - [Network configuration](#network-configuration)
 - [Included tools](#included-tools)
@@ -146,6 +148,16 @@ ai-container --mount-extra ~/repos/b --mount-extra ~/repos/shared-libs
 
 Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.
 
+### Custom /etc/hosts entries
+
+Add static `/etc/hosts` entries inside the container, podman only (Apple's `container` tool has no equivalent flag):
+
+```bash
+ai-container --add-host openqa-ai.qam.suse.cz:169.254.1.2
+```
+
+Repeatable for multiple entries. See [Configuration file](#configuration-file) below for setting these as a standing per-host default instead.
+
 ### Custom entrypoint
 
 You can specify a custom entrypoint using the `--entrypoint` flag:
@@ -162,6 +174,16 @@ ai-container -- --help
 ```
 
 `--claude` and `--opencode` are shortcuts for the two bundled assistants' entrypoints; an explicit `--entrypoint` always takes precedence over either. Passing `--claude` and `--opencode` together is an error.
+
+## Configuration file
+
+For per-host defaults that shouldn't need to be typed on every invocation (e.g. a service only reachable from one particular machine), drop a `~/.config/ai-container.toml` (or set `$AI_CONTAINER_CONFIG` to point elsewhere):
+
+```toml
+add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
+```
+
+`add_hosts` entries combine additively with any `--add-host` flags on the command line, de-duplicated. On the `container` engine, config-supplied `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an explicit `--add-host` on that engine is a hard error instead.
 
 ## What the launcher does
 

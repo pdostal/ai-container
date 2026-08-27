@@ -28,7 +28,7 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
+from . import __version__, config, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
 from . import engine as engine_ops
 from .console import Reporter
 from .models import Engine
@@ -121,6 +121,13 @@ def main(
             help="Auto rw-mount a git worktree's parent checkout.",
         ),
     ] = True,
+    add_host: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--add-host",
+            help="Extra /etc/hosts entry as host:ip. Repeatable. Podman only.",
+        ),
+    ] = None,
     debug: Annotated[
         bool, typer.Option("--debug", help="Verbose launcher + assistant debug output.")
     ] = False,
@@ -195,6 +202,15 @@ def main(
                 "--microvm is only supported with the podman engine "
                 "(Apple's container tool already runs each container in its own VM)."
             )
+        launcher_config = config.load_config(config.config_path(host_home))
+        config_add_hosts = _validate_add_hosts(list(launcher_config.add_hosts))
+        cli_add_hosts = _validate_add_hosts(list(add_host or []))
+        if cli_add_hosts and selected_engine is Engine.CONTAINER:
+            raise CliError(
+                "--add-host is only supported with the podman engine "
+                "(Apple's container tool has no /etc/hosts equivalent flag)."
+            )
+        combined_add_hosts = list(dict.fromkeys([*config_add_hosts, *cli_add_hosts]))
         try:
             cwd = Path.cwd()
         except (FileNotFoundError, OSError) as exc:
@@ -214,6 +230,9 @@ def main(
     except paths.HomeDirectoryWorkdirError as exc:
         reporter.fail(f"Refusing to run: current directory is your entire $HOME ({exc})")
         reporter.detail("Run this from a project subdirectory instead.")
+        raise typer.Exit(1) from exc
+    except config.ConfigError as exc:
+        reporter.fail(str(exc))
         raise typer.Exit(1) from exc
     except CliError as exc:
         reporter.fail(str(exc))
@@ -254,6 +273,7 @@ def main(
     _apply_gcloud(
         args, host_home=host_home, selinux_enabled=selinux_status.enabled, reporter=reporter
     )
+    _apply_add_hosts(args, combined_add_hosts, engine=selected_engine, reporter=reporter)
     for spec in mounts.default_mounts(host_home, CONTAINER_HOME, host_platform=host_platform):
         mounts.apply_mount(args, spec, selinux_enabled=selinux_status.enabled, reporter=reporter)
 
@@ -352,6 +372,31 @@ def _apply_extra_mounts(
         reporter.debug_ok(f"Mounting extra directory (bind-mount, rw): {resolved} \u2192 {target}")
         suffix = selinux.bind_suffix(selinux_enabled)
         args.append(f"--mount=type=bind,source={resolved},target={target}{suffix}")
+
+
+def _validate_add_hosts(entries: list[str]) -> list[str]:
+    for entry in entries:
+        host, sep, value = entry.partition(":")
+        if not sep or not host or not value:
+            raise CliError(f"Invalid --add-host entry: {entry!r} (expected host:ip)")
+    return entries
+
+
+def _apply_add_hosts(
+    args: list[str], entries: list[str], *, engine: Engine, reporter: Reporter
+) -> None:
+    if not entries:
+        return
+    if engine is Engine.CONTAINER:
+        # Config-supplied entries only reach here (an explicit --add-host is
+        # already a hard error above); skip quietly since the config file is
+        # meant to be a harmless static default across engines/hosts.
+        for entry in entries:
+            reporter.debug_fail(f"Skipping --add-host (unsupported on container engine): {entry}")
+        return
+    for entry in entries:
+        reporter.debug_ok(f"Adding hosts entry: {entry}")
+        args.append(f"--add-host={entry}")
 
 
 def _apply_gcloud(
