@@ -165,7 +165,7 @@ ai-container -- --help
 
 ## What the launcher does
 
-`ai-container` is a Python CLI (source under [`src/ai_container/`](src/ai_container/)) that assembles a single `podman run` / `container run` invocation: it never talks to a daemon API directly, so `podman`/`container --debug` output (via `--debug`) reflects exactly what would happen if you ran the printed command yourself. Docker isn't supported yet, but the engine-selection code is structured to make adding it later straightforward.
+`ai-container` is a Python CLI (source under [`src/ai_container/`](src/ai_container/)) that assembles a single `podman run` / `container run` invocation: it never talks to a daemon API directly, so `podman`/`container` debug output (via `--debug-podman`, separate from the launcher's own `--debug`) reflects exactly what would happen if you ran the printed command yourself. Docker isn't supported yet, but the engine-selection code is structured to make adding it later straightforward.
 
 ## Network Configuration
 

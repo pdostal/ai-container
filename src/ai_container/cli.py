@@ -122,7 +122,13 @@ def main(
         ),
     ] = True,
     debug: Annotated[
-        bool, typer.Option("--debug", help="Verbose engine + mount debug output.")
+        bool, typer.Option("--debug", help="Verbose launcher + assistant debug output.")
+    ] = False,
+    debug_podman: Annotated[
+        bool,
+        typer.Option(
+            "--debug-podman", help="Verbose podman/container engine debug output (very noisy)."
+        ),
     ] = False,
     microvm: Annotated[
         bool,
@@ -288,10 +294,10 @@ def main(
     args.extend(engine_ops.oci_runtime_args(selected_engine, microvm=microvm))
 
     engine_debug_args: list[str] = []
-    if debug:
+    if debug_podman:
         engine_debug_args = engine_ops.debug_args(selected_engine)
-        if resolved_entrypoint.endswith("/opencode"):
-            tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
+    if debug and resolved_entrypoint.endswith("/opencode"):
+        tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
 
     engine_ops.announce(selected_engine, container_name, reporter=reporter)
     reporter.step(f"Using entrypoint: {resolved_entrypoint}")
