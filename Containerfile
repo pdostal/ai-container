@@ -11,6 +11,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis \
     php8-xmlreader php8-xmlwriter php8-sqlite php8-tokenizer php8-phar \
     php-composer2 php8-smbclient php8-ldap php8-mysql php8-pgsql rtk \
+    perl-Mojo-SQLite perl-Minion-Backend-SQLite perl-SQL-SplitStatement \
     bugwarden
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
