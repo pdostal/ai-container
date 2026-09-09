@@ -303,6 +303,51 @@ def test_mount_extra_is_deduplicated(
     assert len(mount_flags) == 1
 
 
+def _mount_flags_targeting(argv: list[str], target: str) -> list[str]:
+    """Flags that actually declare a mount to ``target`` (``-v ...`` or ``--mount=...``),
+    as opposed to e.g. an unrelated ``-w <target>`` argument."""
+    return [
+        flag
+        for flag in argv
+        if f"target={target}" in flag
+        or flag.endswith(f"{target}:ro")
+        or flag.endswith(f"{target}:rw")
+    ]
+
+
+def test_default_mount_skipped_when_workdir_target_collides(
+    isolated_home: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_dir = isolated_home / "bin"
+    bin_dir.mkdir()
+    monkeypatch.chdir(bin_dir)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    bin_flags = _mount_flags_targeting(argv, "/home/coder/bin")
+    assert len(bin_flags) == 1
+    assert "type=bind" in bin_flags[0]  # the rw workdir mount, not the ro default mount
+
+
+def test_default_mount_skipped_when_extra_mount_target_collides(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+) -> None:
+    bin_dir = isolated_home / "bin"
+    bin_dir.mkdir()
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--mount-extra", str(bin_dir)])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    bin_flags = _mount_flags_targeting(argv, "/home/coder/bin")
+    assert len(bin_flags) == 1
+    assert "type=bind" in bin_flags[0]  # the rw extra mount, not the ro default mount
+
+
 def test_web_mode_sets_detach_and_port(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

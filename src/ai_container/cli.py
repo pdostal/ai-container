@@ -262,10 +262,11 @@ def main(
     args.extend(engine_ops.identity_args(selected_engine))
     reporter.debug_ok(f"Mounting working directory (bind-mount, rw): {cwd} \u2192 {target_workdir}")
 
+    mounted_targets: set[Path] = {target_workdir}
     _apply_extra_mounts(
         args,
         extra_mount_paths,
-        mounted_targets={target_workdir},
+        mounted_targets=mounted_targets,
         host_home=host_home,
         selinux_enabled=selinux_status.enabled,
         reporter=reporter,
@@ -275,7 +276,14 @@ def main(
     )
     _apply_add_hosts(args, combined_add_hosts, engine=selected_engine, reporter=reporter)
     for spec in mounts.default_mounts(host_home, CONTAINER_HOME, host_platform=host_platform):
-        mounts.apply_mount(args, spec, selinux_enabled=selinux_status.enabled, reporter=reporter)
+        if spec.container in mounted_targets:
+            reporter.debug_fail(f"{spec.label} skipped (already mounted): {spec.container}")
+            continue
+        applied = mounts.apply_mount(
+            args, spec, selinux_enabled=selinux_status.enabled, reporter=reporter
+        )
+        if applied:
+            mounted_targets.add(spec.container)
 
     args.extend(["-e", "OPENCODE_DISABLE_LSP_DOWNLOAD=true"])
     reporter.debug_detail("Setting OPENCODE_DISABLE_LSP_DOWNLOAD=true")
