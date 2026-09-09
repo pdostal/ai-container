@@ -425,6 +425,21 @@ def test_bugzilla_and_redmine_keys_forwarded(
     assert "REDMINE_API_KEY=rm-secret" in argv
 
 
+def test_pushover_keys_forwarded(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUSHOVER_USER", "po-user")
+    monkeypatch.setenv("PUSHOVER_TOKEN", "po-token")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert "PUSHOVER_USER=po-user" in argv
+    assert "PUSHOVER_TOKEN=po-token" in argv
+
+
 def test_debug_does_not_prepend_opencode_flags_for_other_entrypoints(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

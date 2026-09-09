@@ -293,6 +293,8 @@ def main(
     _forward_env(args, "ANTHROPIC_VERTEX_PROJECT_ID", reporter)
     _forward_env(args, "BUGZILLA_API_KEY", reporter)
     _forward_env(args, "REDMINE_API_KEY", reporter)
+    _forward_env(args, "PUSHOVER_USER", reporter)
+    _forward_env(args, "PUSHOVER_TOKEN", reporter)
 
     if web_mode:
         web_config = web.configure(

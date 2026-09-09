@@ -58,6 +58,7 @@ def default_mounts(host_home: Path, container_home: Path, *, host_platform: str)
         mount("tea config directory", ".config/tea", ".config/tea", d, rw),
         mount("AWS config directory", ".aws", ".aws", d, rw),
         mount("Kubernetes config", ".kube", ".kube", d, rw),
+        mount("User bin directory", "bin", "bin", d, ro),
     ]
 
 

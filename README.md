@@ -100,7 +100,7 @@ The launcher automatically:
 - Configures SELinux labels when needed (podman/Linux only).
 - Forwards SSH agent for git operations (podman: Linux only; `container`: via its built-in `--ssh` forwarding, macOS only).
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config).
-- Forwards `$BUGZILLA_API_KEY` and `$REDMINE_API_KEY` from the host environment when set.
+- Forwards `$BUGZILLA_API_KEY`, `$REDMINE_API_KEY`, `$PUSHOVER_USER`, and `$PUSHOVER_TOKEN` from the host environment when set.
 - Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
 - Optionally mounts Google Cloud credentials when available, and forwards `$GCLOUD_PROJECT` from the host environment (as `GOOGLE_CLOUD_PROJECT`/`VERTEXAI_PROJECT`) when set.
 - Assigns a random container name (e.g. `ai-x7q`) printed on every run.

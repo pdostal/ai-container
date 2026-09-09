@@ -33,7 +33,16 @@ def test_default_mounts_cover_expected_labels(tmp_path: Path) -> None:
     assert "Claude config directory" in labels
     assert "OpenCode data directory" in labels
     assert "Kubernetes config" in labels
+    assert "User bin directory" in labels
     assert len(specs) == len(labels)  # no accidental duplicates
+
+
+def test_user_bin_mount_is_read_only(tmp_path: Path) -> None:
+    specs = mounts.default_mounts(tmp_path, CONTAINER_HOME, host_platform="Linux")
+    spec = next(s for s in specs if s.label == "User bin directory")
+    assert spec.host == tmp_path / "bin"
+    assert spec.container == CONTAINER_HOME / "bin"
+    assert spec.access is MountAccess.READ_ONLY
 
 
 def test_apply_mount_skips_missing_host_path(tmp_path: Path) -> None:
