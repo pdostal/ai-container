@@ -74,10 +74,15 @@ def fix_relay_permissions(engine: Engine, container_name: str, *, attempts: int 
         "test -S /var/host-services/ssh-auth.sock && chmod 0666 /var/host-services/ssh-auth.sock"
     )
     for attempt in range(attempts):
+        # Never inherit the real terminal's stdin: it would race the
+        # foreground `container run -it` for keystrokes. start_new_session
+        # detaches it from the terminal's process group as a second line of defense.
         result = subprocess.run(
             [engine.value, "exec", "-u", "root", container_name, "sh", "-c", command],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
             check=False,
         )
         if result.returncode == 0:

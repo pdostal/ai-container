@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import socket
+import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pytest_subprocess import FakeProcess
@@ -104,3 +106,18 @@ def test_fix_relay_permissions_retries_then_gives_up(
     fp.register(["container", "exec", "-u", "root", "ai-abc", "sh", "-c", fp.any()], returncode=1)
     fp.register(["container", "exec", "-u", "root", "ai-abc", "sh", "-c", fp.any()], returncode=1)
     ssh_agent.fix_relay_permissions(Engine.CONTAINER, "ai-abc", attempts=2)
+
+
+def test_fix_relay_permissions_never_inherits_terminal_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ssh_agent.fix_relay_permissions(Engine.CONTAINER, "ai-abc")
+    assert calls[0]["stdin"] == subprocess.DEVNULL
+    assert calls[0]["start_new_session"] is True
