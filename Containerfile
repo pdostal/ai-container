@@ -34,6 +34,7 @@ RUN mkdir -p \
       /home/coder/.ssh/agent \
       /etc/ssh/ssh_config.d
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
+RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
 RUN chown -R coder:$(id -gn coder) /home/coder
 WORKDIR /home/coder
 USER coder

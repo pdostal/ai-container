@@ -43,7 +43,7 @@ podman build --pull=always --build-arg CODER_UID="$(id -u)" --build-arg CODER_GI
 Or with Apple's `container` tool:
 
 ```bash
-container build --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
+container build --pull --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
 ```
 
 The image creates a `coder` user with UID/GID `1000:1000` by default. Pass `CODER_UID` and `CODER_GID` when your host UID/GID differ, or when running through the Podman macOS VM. Rebuild the image if the host UID/GID you want to use changes.
