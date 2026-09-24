@@ -51,5 +51,6 @@ RUN mkdir -p /home/coder/.local/share/lemminx && \
     rm -f /tmp/vscode-xml.vsix
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN curl -fsSL https://opencode.ai/install | bash
+RUN npx --yes skills add plusky/openQA-skill --skill openqa -g -a opencode -y
 RUN rtk init -g
 ENV PATH="/home/coder/.local/bin:$PATH"

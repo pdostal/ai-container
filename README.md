@@ -17,6 +17,7 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
 - [What the launcher does](#what-the-launcher-does)
 - [Network configuration](#network-configuration)
 - [Included tools](#included-tools)
+- [Agent Skills](#agent-skills)
 - [Development](#development)
 
 ## Prerequisites
@@ -226,6 +227,25 @@ Bind your MCP server to `127.0.0.1` on the host, then point the container's MCP 
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
 - **AI Coding Assistants**: Claude Code, OpenCode
+
+## Agent Skills
+
+The image bakes the [`openqa` skill](https://github.com/plusky/openQA-skill) in for OpenCode
+at build time (`~/.agents/skills/openqa`), since that path isn't mounted from the host and
+only exists in the image layer — see the `Containerfile`.
+
+Claude Code's skills directory (`~/.claude/skills/`) *is* mounted from the host (see
+[What the launcher does](#what-the-launcher-does)), so baking a copy into the image would be
+silently shadowed by that mount. Install it once instead, from inside any `ai-container`
+session — the write lands on the host through the mount and persists across every future
+run without touching the `Containerfile`:
+
+```bash
+npx --yes skills add plusky/openQA-skill --skill openqa -g -a claude-code -y --copy
+```
+
+Re-run either step later to pick up upstream `openqa` changes: rebuild the image for
+OpenCode's copy, re-run the command above for Claude Code's.
 
 ## Development
 
