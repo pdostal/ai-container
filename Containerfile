@@ -16,7 +16,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN gem install ruby-lsp
-RUN npm install -g markdownlint-cli perlnavigator-server openrtk \
+RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope \
     pyright typescript typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
@@ -52,5 +52,6 @@ RUN mkdir -p /home/coder/.local/share/lemminx && \
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN curl -fsSL https://opencode.ai/install | bash
 RUN npx --yes skills add plusky/openQA-skill --skill openqa -g -a opencode -y
+RUN curl -fsSL https://raw.githubusercontent.com/anthonystepvoy/caveman-opencode/main/install-opencode.sh | sh
 RUN rtk init -g
 ENV PATH="/home/coder/.local/bin:$PATH"
