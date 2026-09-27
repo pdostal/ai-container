@@ -83,6 +83,7 @@ ai-container --claude
 ai-container --claude --resume              # --resume isn't ours, forwarded automatically
 ai-container --entrypoint /bin/bash -c 'echo hi'   # same for -c
 ai-container --claude -- --debug            # --debug *is* ours; -- forwards the literal flag instead
+ai-container --env MY_VARIABLE              # forward a host environment variable when set
 ```
 
 This is a deliberate (and arguably improved) departure from the old bash script's parsing, which stopped recognizing its own flags entirely as soon as it saw the first argument it didn't understand. Since `ai-container` keeps recognizing its own flags anywhere on the command line, only genuine name collisions need `--`.
@@ -182,9 +183,12 @@ For per-host defaults that shouldn't need to be typed on every invocation (e.g. 
 
 ```toml
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
+env = ["MY_VARIABLE", "ANOTHER_VARIABLE"]
 ```
 
 `add_hosts` entries combine additively with any `--add-host` flags on the command line, de-duplicated. On the `container` engine, config-supplied `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an explicit `--add-host` on that engine is a hard error instead.
+
+`env` lists host environment variable names to forward when set. Entries combine additively with repeatable `--env NAME` flags and are de-duplicated; values remain in the host environment rather than the config file.
 
 ## What the launcher does
 

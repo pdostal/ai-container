@@ -128,6 +128,10 @@ def main(
             help="Extra /etc/hosts entry as host:ip. Repeatable. Podman only.",
         ),
     ] = None,
+    env: Annotated[
+        list[str] | None,
+        typer.Option("--env", help="Host environment variable to forward. Repeatable."),
+    ] = None,
     debug: Annotated[
         bool, typer.Option("--debug", help="Verbose launcher + assistant debug output.")
     ] = False,
@@ -298,11 +302,21 @@ def main(
     for key, value in forwarding.env.items():
         args.extend(["-e", f"{key}={value}"])
 
-    _forward_env(args, "ANTHROPIC_VERTEX_PROJECT_ID", reporter)
-    _forward_env(args, "BUGZILLA_API_KEY", reporter)
-    _forward_env(args, "REDMINE_API_KEY", reporter)
-    _forward_env(args, "PUSHOVER_USER", reporter)
-    _forward_env(args, "PUSHOVER_TOKEN", reporter)
+    env_names: list[str] = list(
+        dict.fromkeys(
+            [
+                "ANTHROPIC_VERTEX_PROJECT_ID",
+                "BUGZILLA_API_KEY",
+                "REDMINE_API_KEY",
+                "PUSHOVER_USER",
+                "PUSHOVER_TOKEN",
+                *launcher_config.env,
+                *(env or []),
+            ]
+        )
+    )
+    for name in env_names:
+        _forward_env(args, name, reporter)
 
     if web_mode:
         web_config = web.configure(

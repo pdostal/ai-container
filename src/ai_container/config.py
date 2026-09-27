@@ -20,6 +20,7 @@ class ConfigError(Exception):
 @dataclass(frozen=True, slots=True)
 class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
+    env: tuple[str, ...] = ()
 
 
 def config_path(host_home: Path) -> Path:
@@ -47,4 +48,8 @@ def load_config(path: Path) -> LauncherConfig:
     ):
         raise ConfigError(f"{path}: 'add_hosts' must be an array of strings")
 
-    return LauncherConfig(add_hosts=tuple(raw_add_hosts))
+    raw_env = data.get("env", [])
+    if not isinstance(raw_env, list) or not all(isinstance(item, str) for item in raw_env):
+        raise ConfigError(f"{path}: 'env' must be an array of strings")
+
+    return LauncherConfig(add_hosts=tuple(raw_add_hosts), env=tuple(raw_env))

@@ -25,11 +25,14 @@ def test_load_config_missing_file_returns_defaults(tmp_path: Path) -> None:
     assert result == config.LauncherConfig()
 
 
-def test_load_config_reads_add_hosts(tmp_path: Path) -> None:
+def test_load_config_reads_add_hosts_and_env(tmp_path: Path) -> None:
     path = tmp_path / "ai-container.toml"
-    path.write_text('add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]\n')
+    path.write_text(
+        'add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]\nenv = ["OPENQA_HOST", "OPENQA_TOKEN"]\n'
+    )
     result = config.load_config(path)
     assert result.add_hosts == ("openqa-ai.qam.suse.cz:169.254.1.2",)
+    assert result.env == ("OPENQA_HOST", "OPENQA_TOKEN")
 
 
 def test_load_config_rejects_malformed_toml(tmp_path: Path) -> None:
@@ -49,6 +52,13 @@ def test_load_config_rejects_non_list_add_hosts(tmp_path: Path) -> None:
 def test_load_config_rejects_non_string_items(tmp_path: Path) -> None:
     path = tmp_path / "ai-container.toml"
     path.write_text("add_hosts = [1, 2]\n")
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_invalid_env(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('env = "NOT_A_LIST"\n')
     with pytest.raises(config.ConfigError):
         config.load_config(path)
 

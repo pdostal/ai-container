@@ -201,6 +201,44 @@ def test_add_host_from_malformed_config_file_errors(
     assert "Failed to parse" in result.output
 
 
+def test_env_from_config_and_cli_combine_and_dedupe(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text('env = ["CONFIG_ENV", "SHARED_ENV"]\n')
+    monkeypatch.setenv("CONFIG_ENV", "from-config")
+    monkeypatch.setenv("SHARED_ENV", "shared")
+    monkeypatch.setenv("CLI_ENV", "from-cli")
+    result = runner.invoke(
+        cli_mod.app,
+        ["--runtime", "podman", "--env", "SHARED_ENV", "--env", "CLI_ENV"],
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "CONFIG_ENV=from-config" in argv
+    assert "CLI_ENV=from-cli" in argv
+    assert argv.count("SHARED_ENV=shared") == 1
+
+
+def test_env_skips_unset_host_variable(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MISSING_ENV", raising=False)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--env", "MISSING_ENV"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert not any(arg.startswith("MISSING_ENV=") for arg in argv)
+
+
 def test_short_unknown_option_forwarded_without_dash_dash(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
