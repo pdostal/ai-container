@@ -239,6 +239,62 @@ def test_env_skips_unset_host_variable(
     assert not any(arg.startswith("MISSING_ENV=") for arg in argv)
 
 
+def test_explicit_workspace_mounts_dirs_and_prints_banner(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    tmp_path: Path,
+) -> None:
+    ws_dir = tmp_path / "ws-repo"
+    ws_dir.mkdir()
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text(
+        f'[[workspace]]\nname = "frontend"\ndirs = ["{ws_dir}"]\n'
+    )
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--workspace", "frontend"])
+    assert result.exit_code == 0, result.output
+    assert "Workspace: frontend" in result.output
+    (argv,) = captured_run
+    assert any(str(ws_dir) in flag for flag in argv)
+
+
+def test_unknown_workspace_name_errors(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--workspace", "nonexistent"])
+    assert result.exit_code == 1
+    assert "Unknown workspace" in result.output
+
+
+def test_auto_workspaces_detects_from_cwd(
+    isolated_home: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws_dir = isolated_home.parent / "ws-repo"
+    ws_dir.mkdir()
+    monkeypatch.chdir(ws_dir)
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text(
+        f'auto_workspaces = true\n[[workspace]]\nname = "frontend"\ndirs = ["{ws_dir}"]\n'
+    )
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    assert "Workspace: frontend" in result.output
+
+
+def test_no_workspace_omits_banner_line(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    assert "Workspace:" not in result.output
+
+
 def test_short_unknown_option_forwarded_without_dash_dash(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

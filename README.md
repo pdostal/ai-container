@@ -11,6 +11,7 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
   - [Basic usage](#basic-usage)
   - [Web mode](#web-mode)
   - [Custom mounts](#custom-mounts)
+  - [Workspaces](#workspaces)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom entrypoint](#custom-entrypoint)
 - [Configuration file](#configuration-file)
@@ -150,6 +151,16 @@ ai-container -m ~/repos/b -m ~/repos/shared-libs
 
 Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.
 
+### Workspaces
+
+Named groups of directories, defined in the [configuration file](#configuration-file), that get mounted together in one shot instead of listing them all with repeated `--mount-extra` flags:
+
+```bash
+ai-container --workspace frontend
+```
+
+`--workspace` always looks the name up in the config file's `[[workspace]]` entries, regardless of `auto_workspaces`, and errors out if it isn't defined. With `auto_workspaces = true`, running `ai-container` from inside (or below) any of a workspace's `dirs` loads that workspace automatically, no flag needed. The active workspace's name is printed on startup; the line is omitted when no workspace is active.
+
 ### Custom /etc/hosts entries
 
 Add static `/etc/hosts` entries inside the container, podman only (Apple's `container` tool has no equivalent flag):
@@ -184,11 +195,22 @@ For per-host defaults that shouldn't need to be typed on every invocation (e.g. 
 ```toml
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
 env = ["MY_VARIABLE", "ANOTHER_VARIABLE"]
+auto_workspaces = true
+
+[[workspace]]
+name = "frontend"
+dirs = ["/home/user/repos/app", "/home/user/repos/shared"]
+
+[[workspace]]
+name = "backend"
+dirs = ["/home/user/repos/api"]
 ```
 
 `add_hosts` entries combine additively with any `--add-host` flags on the command line, de-duplicated. On the `container` engine, config-supplied `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an explicit `--add-host` on that engine is a hard error instead.
 
 `env` lists host environment variable names to forward when set. Entries combine additively with repeatable `--env NAME` flags and are de-duplicated; values remain in the host environment rather than the config file.
+
+`[[workspace]]` entries each define a `name` and a list of `dirs` to mount together; see [Workspaces](#workspaces) above. `auto_workspaces` (default `false`) controls whether being inside one of those `dirs` loads its workspace without an explicit `--workspace` flag.
 
 ## What the launcher does
 

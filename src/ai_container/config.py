@@ -18,9 +18,17 @@ class ConfigError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class Workspace:
+    name: str
+    dirs: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
     env: tuple[str, ...] = ()
+    workspaces: tuple[Workspace, ...] = ()
+    auto_workspaces: bool = False
 
 
 def config_path(host_home: Path) -> Path:
@@ -52,4 +60,30 @@ def load_config(path: Path) -> LauncherConfig:
     if not isinstance(raw_env, list) or not all(isinstance(item, str) for item in raw_env):
         raise ConfigError(f"{path}: 'env' must be an array of strings")
 
-    return LauncherConfig(add_hosts=tuple(raw_add_hosts), env=tuple(raw_env))
+    raw_auto_workspaces = data.get("auto_workspaces", False)
+    if not isinstance(raw_auto_workspaces, bool):
+        raise ConfigError(f"{path}: 'auto_workspaces' must be a boolean")
+
+    raw_workspaces = data.get("workspace", [])
+    if not isinstance(raw_workspaces, list):
+        raise ConfigError(f"{path}: 'workspace' must be an array of tables")
+    workspaces = tuple(_parse_workspace(path, entry) for entry in raw_workspaces)
+
+    return LauncherConfig(
+        add_hosts=tuple(raw_add_hosts),
+        env=tuple(raw_env),
+        workspaces=workspaces,
+        auto_workspaces=raw_auto_workspaces,
+    )
+
+
+def _parse_workspace(path: Path, entry: object) -> Workspace:
+    if not isinstance(entry, dict):
+        raise ConfigError(f"{path}: each [[workspace]] entry must be a table")
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        raise ConfigError(f"{path}: workspace 'name' must be a non-empty string")
+    dirs = entry.get("dirs")
+    if not isinstance(dirs, list) or not dirs or not all(isinstance(d, str) for d in dirs):
+        raise ConfigError(f"{path}: workspace '{name}' 'dirs' must be a non-empty array of strings")
+    return Workspace(name=name, dirs=tuple(Path(d).expanduser() for d in dirs))

@@ -68,3 +68,62 @@ def test_load_config_ignores_unknown_keys(tmp_path: Path) -> None:
     path.write_text('unrelated = "value"\n')
     result = config.load_config(path)
     assert result == config.LauncherConfig()
+
+
+def test_load_config_reads_workspaces_and_auto_workspaces(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text(
+        "auto_workspaces = true\n"
+        "\n"
+        '[[workspace]]\nname = "frontend"\ndirs = ["/repos/app", "/repos/shared"]\n'
+        "\n"
+        '[[workspace]]\nname = "backend"\ndirs = ["/repos/api"]\n'
+    )
+    result = config.load_config(path)
+    assert result.auto_workspaces is True
+    assert result.workspaces == (
+        config.Workspace(name="frontend", dirs=(Path("/repos/app"), Path("/repos/shared"))),
+        config.Workspace(name="backend", dirs=(Path("/repos/api"),)),
+    )
+
+
+def test_load_config_rejects_non_bool_auto_workspaces(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('auto_workspaces = "yes"\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_workspace_missing_name(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('[[workspace]]\ndirs = ["/repos/app"]\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_workspace_missing_dirs(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('[[workspace]]\nname = "frontend"\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_workspace_empty_dirs(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('[[workspace]]\nname = "frontend"\ndirs = []\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_non_list_workspace(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('workspace = "not-a-list"\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
+def test_load_config_rejects_non_table_workspace_entry(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text("workspace = [1]\n")
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)

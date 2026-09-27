@@ -30,6 +30,7 @@ import typer
 
 from . import __version__, config, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
 from . import engine as engine_ops
+from . import workspace as workspace_ops
 from .console import Reporter
 from .models import Engine
 from .naming import random_container_name
@@ -105,6 +106,15 @@ def main(
         typer.Option(
             "--web-password",
             help="HTTP basic auth password for --web (random if unset).",
+            show_default=False,
+        ),
+    ] = None,
+    workspace: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace",
+            help="Mount a named workspace's dirs (see [[workspace]] in the config file). "
+            "Overrides auto_workspaces detection.",
             show_default=False,
         ),
     ] = None,
@@ -224,6 +234,12 @@ def main(
         target_workdir = paths.resolve_target_workdir(
             cwd, host_home=host_home, container_home=CONTAINER_HOME
         )
+        active_workspace = workspace_ops.resolve(
+            explicit_name=workspace,
+            auto=launcher_config.auto_workspaces,
+            cwd=cwd,
+            workspaces=launcher_config.workspaces,
+        )
     except engine_ops.UnknownEngineError as exc:
         reporter.fail(
             f"Unknown --runtime/AI_CONTAINER_RUNTIME value: {exc} "
@@ -240,6 +256,9 @@ def main(
     except config.ConfigError as exc:
         reporter.fail(str(exc))
         raise typer.Exit(1) from exc
+    except workspace_ops.WorkspaceNotFoundError as exc:
+        reporter.fail(str(exc))
+        raise typer.Exit(1) from exc
     except CliError as exc:
         reporter.fail(str(exc))
         raise typer.Exit(1) from exc
@@ -247,6 +266,9 @@ def main(
     image = engine_ops.image_name(selected_engine)
     selinux_status = selinux.detect(host_platform=host_platform, reporter=reporter)
     container_name = random_container_name()
+
+    if active_workspace is not None:
+        extra_mount_paths.extend(active_workspace.dirs)
 
     if worktree_mount:
         worktree_parent = git_utils.detect_worktree_parent(cwd)
@@ -347,6 +369,8 @@ def main(
         tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
 
     engine_ops.announce(selected_engine, container_name, reporter=reporter)
+    if active_workspace is not None:
+        reporter.step(f"Workspace: {active_workspace.name}")
     reporter.step(f"Using entrypoint: {resolved_entrypoint}")
     reporter.step(f"Passing params: {' '.join(tool_args)}")
     reporter.blank()
