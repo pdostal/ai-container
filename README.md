@@ -142,10 +142,10 @@ Mount additional host directories into the container read-write, in addition to 
 ai-container --mount-extra ~/repos/b
 ```
 
-Repeatable for multiple directories:
+`-m` is a shorthand for `--mount-extra`. Repeatable for multiple directories:
 
 ```bash
-ai-container --mount-extra ~/repos/b --mount-extra ~/repos/shared-libs
+ai-container -m ~/repos/b -m ~/repos/shared-libs
 ```
 
 Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.

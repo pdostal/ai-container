@@ -341,6 +341,20 @@ def test_mount_extra_is_deduplicated(
     assert len(mount_flags) == 1
 
 
+def test_mount_extra_short_flag(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    tmp_path: Path,
+) -> None:
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "-m", str(extra)])
+    (argv,) = captured_run
+    assert any(str(extra) in flag for flag in argv)
+
+
 def _mount_flags_targeting(argv: list[str], target: str) -> list[str]:
     """Flags that actually declare a mount to ``target`` (``-v ...`` or ``--mount=...``),
     as opposed to e.g. an unrelated ``-w <target>`` argument."""

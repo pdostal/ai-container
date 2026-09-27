@@ -111,7 +111,9 @@ def main(
     mount_extra: Annotated[
         list[Path] | None,
         typer.Option(
-            "--mount-extra", help="Extra host directory to bind-mount read-write. Repeatable."
+            "--mount-extra",
+            "-m",
+            help="Extra host directory to bind-mount read-write. Repeatable.",
         ),
     ] = None,
     worktree_mount: Annotated[
