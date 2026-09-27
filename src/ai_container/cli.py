@@ -372,7 +372,8 @@ def main(
     if active_workspace is not None:
         reporter.step(f"Workspace: {active_workspace.name}")
     reporter.step(f"Using entrypoint: {resolved_entrypoint}")
-    reporter.step(f"Passing params: {' '.join(tool_args)}")
+    if tool_args:
+        reporter.step(f"Passing params: {' '.join(tool_args)}")
     reporter.blank()
 
     if forwarding.needs_relay_chmod:
