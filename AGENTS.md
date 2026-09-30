@@ -41,6 +41,7 @@ src/ai_container/
   git_utils.py   git worktree detection
   selinux.py     sestatus parsing + the :z/:Z suffix rules
   mounts.py      the declarative table of ~20 conditional credential/cache mounts
+  config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra/disable envs+mounts, ssh_agent, workspaces
   ssh_agent.py   SSH agent forwarding + the `container --ssh` rootless relay chmod workaround
   web.py         --web mode (random password, host IP detection, banner)
   naming.py      random container names / web passwords

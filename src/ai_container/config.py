@@ -26,7 +26,11 @@ class Workspace:
 @dataclass(frozen=True, slots=True)
 class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
-    env: tuple[str, ...] = ()
+    extra_envs: tuple[str, ...] = ()
+    disable_envs: tuple[str, ...] = ()
+    extra_mounts: tuple[Path, ...] = ()
+    disable_mounts: tuple[Path, ...] = ()
+    ssh_agent: bool = True
     workspaces: tuple[Workspace, ...] = ()
     auto_workspaces: bool = False
 
@@ -37,6 +41,21 @@ def config_path(host_home: Path) -> Path:
     if override:
         return Path(override)
     return host_home / ".config" / "ai-container.toml"
+
+
+def normalize_disable_path(raw: Path, *, source: str) -> Path:
+    """Expand ``~`` and require an absolute path without ``..`` (matching is lexical)."""
+    expanded = raw.expanduser()
+    if not expanded.is_absolute() or ".." in expanded.parts:
+        raise ConfigError(f"{source}: disable path must be absolute without '..': {raw}")
+    return expanded
+
+
+def _str_list(path: Path, data: dict[str, object], key: str) -> tuple[str, ...]:
+    raw = data.get(key, [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ConfigError(f"{path}: {key!r} must be an array of strings")
+    return tuple(raw)
 
 
 def load_config(path: Path) -> LauncherConfig:
@@ -50,15 +69,18 @@ def load_config(path: Path) -> LauncherConfig:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Failed to parse {path}: {exc}") from exc
 
-    raw_add_hosts = data.get("add_hosts", [])
-    if not isinstance(raw_add_hosts, list) or not all(
-        isinstance(item, str) for item in raw_add_hosts
-    ):
-        raise ConfigError(f"{path}: 'add_hosts' must be an array of strings")
+    if "env" in data:
+        raise ConfigError(f"{path}: 'env' was renamed to 'extra_envs'")
 
-    raw_env = data.get("env", [])
-    if not isinstance(raw_env, list) or not all(isinstance(item, str) for item in raw_env):
-        raise ConfigError(f"{path}: 'env' must be an array of strings")
+    disable_mounts = tuple(
+        normalize_disable_path(Path(d), source=f"{path}: 'disable_mounts'")
+        for d in _str_list(path, data, "disable_mounts")
+    )
+    extra_mounts = tuple(Path(d).expanduser() for d in _str_list(path, data, "extra_mounts"))
+
+    ssh_agent = data.get("ssh_agent", True)
+    if not isinstance(ssh_agent, bool):
+        raise ConfigError(f"{path}: 'ssh_agent' must be a boolean")
 
     raw_auto_workspaces = data.get("auto_workspaces", False)
     if not isinstance(raw_auto_workspaces, bool):
@@ -70,8 +92,12 @@ def load_config(path: Path) -> LauncherConfig:
     workspaces = tuple(_parse_workspace(path, entry) for entry in raw_workspaces)
 
     return LauncherConfig(
-        add_hosts=tuple(raw_add_hosts),
-        env=tuple(raw_env),
+        add_hosts=_str_list(path, data, "add_hosts"),
+        extra_envs=_str_list(path, data, "extra_envs"),
+        disable_envs=_str_list(path, data, "disable_envs"),
+        extra_mounts=extra_mounts,
+        disable_mounts=disable_mounts,
+        ssh_agent=ssh_agent,
         workspaces=workspaces,
         auto_workspaces=raw_auto_workspaces,
     )

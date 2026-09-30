@@ -84,5 +84,8 @@ def debug_args(engine: Engine) -> list[str]:
     return ["--log-level=debug"] if engine is Engine.PODMAN else ["--debug"]
 
 
-def announce(engine: Engine, name: str, *, reporter: Reporter) -> None:
-    reporter.ok(f"{engine.value} container: {name}")
+def announce(
+    engine: Engine, name: str, *, reporter: Reporter, workspace: str | None = None
+) -> None:
+    suffix = f" (Workspace: {workspace})" if workspace else ""
+    reporter.ok(f"{engine.value} container: {name}{suffix}")

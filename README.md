@@ -84,7 +84,7 @@ ai-container --claude
 ai-container --claude --resume              # --resume isn't ours, forwarded automatically
 ai-container --entrypoint /bin/bash -c 'echo hi'   # same for -c
 ai-container --claude -- --debug            # --debug *is* ours; -- forwards the literal flag instead
-ai-container --env MY_VARIABLE              # forward a host environment variable when set
+ai-container --extra-env MY_VARIABLE              # forward a host environment variable when set
 ```
 
 This is a deliberate (and arguably improved) departure from the old bash script's parsing, which stopped recognizing its own flags entirely as soon as it saw the first argument it didn't understand. Since `ai-container` keeps recognizing its own flags anywhere on the command line, only genuine name collisions need `--`.
@@ -101,9 +101,9 @@ The launcher automatically:
 - Mounts configuration from the host home directory into `/home/coder`.
 - Runs as the image's `coder` user (podman: via `--userns=keep-id`; `container`: via `--uid`/`--gid` matching the host user, since its bind mounts show files owned by whichever uid/gid the process runs as).
 - Configures SELinux labels when needed (podman/Linux only).
-- Forwards SSH agent for git operations (podman: Linux only; `container`: via its built-in `--ssh` forwarding, macOS only).
-- Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts, OSC config).
-- Forwards `$BUGZILLA_API_KEY`, `$REDMINE_API_KEY`, `$PUSHOVER_USER`, and `$PUSHOVER_TOKEN` from the host environment when set.
+- Forwards SSH agent for git operations unless disabled with `--no-ssh-agent` / `ssh_agent = false` (podman: Linux only; `container`: via its built-in `--ssh` forwarding, macOS only).
+- Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts), plus read-write tool configs such as osc, unless excluded with `--disable-mount` / `disable_mounts`.
+- Forwards `$BUGZILLA_API_KEY`, `$REDMINE_API_KEY`, `$PUSHOVER_USER`, and `$PUSHOVER_TOKEN` from the host environment when set (individually suppressible with `--disable-env` / `disable_envs`).
 - Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
 - Optionally mounts Google Cloud credentials when available, and forwards `$GCLOUD_PROJECT` from the host environment (as `GOOGLE_CLOUD_PROJECT`/`VERTEXAI_PROJECT`) when set.
 - Assigns a random container name (e.g. `ai-x7q`) printed on every run.
@@ -140,10 +140,10 @@ Additional web options:
 Mount additional host directories into the container read-write, in addition to the current directory and any auto-detected git worktree parent:
 
 ```bash
-ai-container --mount-extra ~/repos/b
+ai-container --extra-mount ~/repos/b
 ```
 
-`-m` is a shorthand for `--mount-extra`. Repeatable for multiple directories:
+`-m` is a shorthand for `--extra-mount`. Repeatable for multiple directories:
 
 ```bash
 ai-container -m ~/repos/b -m ~/repos/shared-libs
@@ -151,15 +151,17 @@ ai-container -m ~/repos/b -m ~/repos/shared-libs
 
 Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.
 
+The old `--mount-extra` and `--env` spellings no longer exist; because unknown options are forwarded, they now reach the assistant as ordinary arguments.
+
 ### Workspaces
 
-Named groups of directories, defined in the [configuration file](#configuration-file), that get mounted together in one shot instead of listing them all with repeated `--mount-extra` flags:
+Named groups of directories, defined in the [configuration file](#configuration-file), that get mounted together in one shot instead of listing them all with repeated `--extra-mount` flags:
 
 ```bash
 ai-container --workspace frontend
 ```
 
-`--workspace` always looks the name up in the config file's `[[workspace]]` entries, regardless of `auto_workspaces`, and errors out if it isn't defined. With `auto_workspaces = true`, running `ai-container` from inside (or below) any of a workspace's `dirs` loads that workspace automatically, no flag needed. The active workspace's name is printed on startup; the line is omitted when no workspace is active.
+`--workspace` always looks the name up in the config file's `[[workspace]]` entries, regardless of `auto_workspaces`, and errors out if it isn't defined. With `auto_workspaces = true`, running `ai-container` from inside (or below) any of a workspace's `dirs` loads that workspace automatically, no flag needed. The active workspace's name is printed on startup on the same line as the container name (`podman container: ai-x7q (Workspace: frontend)`); it is omitted when no workspace is active.
 
 ### Custom /etc/hosts entries
 
@@ -190,11 +192,15 @@ ai-container -- --help
 
 ## Configuration file
 
-For per-host defaults that shouldn't need to be typed on every invocation (e.g. a service only reachable from one particular machine), drop a `~/.config/ai-container.toml` (or set `$AI_CONTAINER_CONFIG` to point elsewhere):
+For per-host defaults that shouldn't need to be typed on every invocation (e.g. a service only reachable from one particular machine), drop a `~/.config/ai-container.toml` (or set `$AI_CONTAINER_CONFIG` to point elsewhere). A fully commented template lives in [`ai-container.toml.example`](ai-container.toml.example):
 
 ```toml
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
-env = ["MY_VARIABLE", "ANOTHER_VARIABLE"]
+extra_envs = ["MY_VARIABLE", "ANOTHER_VARIABLE"]
+disable_envs = ["PUSHOVER_TOKEN"]
+extra_mounts = ["~/src/shared"]
+disable_mounts = ["~/.aws", "~/.kube"]
+ssh_agent = true
 auto_workspaces = true
 
 [[workspace]]
@@ -208,7 +214,15 @@ dirs = ["/home/user/repos/api"]
 
 `add_hosts` entries combine additively with any `--add-host` flags on the command line, de-duplicated. On the `container` engine, config-supplied `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an explicit `--add-host` on that engine is a hard error instead.
 
-`env` lists host environment variable names to forward when set. Entries combine additively with repeatable `--env NAME` flags and are de-duplicated; values remain in the host environment rather than the config file.
+`extra_envs` lists host environment variable names to forward when set, on top of the built-ins. Entries combine additively with repeatable `--extra-env NAME` flags and are de-duplicated; values remain in the host environment rather than the config file. `env` was renamed to `extra_envs`; the old key is an error.
+
+`disable_envs` (or `--disable-env NAME`) stops a *built-in* forwarded variable (`ANTHROPIC_VERTEX_PROJECT_ID`, `BUGZILLA_API_KEY`, `REDMINE_API_KEY`, `PUSHOVER_USER`, `PUSHOVER_TOKEN`) from being forwarded. `extra_envs` / `--extra-env` win, so naming a variable in both forwards it. Launcher-set variables (`HOME`, `SSH_AUTH_SOCK`, the Vertex/GCLOUD ones) are not affected.
+
+`extra_mounts` lists host directories to bind-mount read-write, merged with `--extra-mount`; relative paths resolve from the launch directory. Directories only.
+
+`disable_mounts` (or `--disable-mount PATH`, repeatable) takes absolute host paths (`~` is expanded, `..` is rejected). Any built-in credential/cache mount, including Google Cloud credentials, whose host path equals or sits below an entry is skipped, so `~/.config` drops gh, glab, openQA, osc, tea, OpenCode config and gcloud at once (on macOS, glab's `~/Library/Application Support/glab-cli` is not under `~/.config` and stays mounted). Matching is lexical (no symlink resolution). Skipping gcloud also skips its generated `GOOGLE_*`/`VERTEX*` variables. Extra mounts, workspace dirs, the worktree parent and the working directory are never filtered, so `disable_mounts = ["~/.config"]` plus `extra_mounts = ["~/.config/gh"]` mounts only `gh` (read-write).
+
+`ssh_agent` (default `true`) controls SSH agent forwarding; `--ssh-agent` / `--no-ssh-agent` override it either way.
 
 `[[workspace]]` entries each define a `name` and a list of `dirs` to mount together; see [Workspaces](#workspaces) above. `auto_workspaces` (default `false`) controls whether being inside one of those `dirs` loads its workspace without an explicit `--workspace` flag.
 

@@ -53,6 +53,13 @@ app = typer.Typer(
 )
 
 CONTAINER_HOME = Path("/home/coder")
+DEFAULT_FORWARDED_ENVS = (
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "BUGZILLA_API_KEY",
+    "REDMINE_API_KEY",
+    "PUSHOVER_USER",
+    "PUSHOVER_TOKEN",
+)
 DEFAULT_OPENCODE_ENTRYPOINT = str(CONTAINER_HOME / ".opencode/bin/opencode")
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
 
@@ -118,12 +125,20 @@ def main(
             show_default=False,
         ),
     ] = None,
-    mount_extra: Annotated[
+    extra_mount: Annotated[
         list[Path] | None,
         typer.Option(
-            "--mount-extra",
+            "--extra-mount",
             "-m",
-            help="Extra host directory to bind-mount read-write. Repeatable.",
+            help="Extra host directory to bind-mount read-write. Repeatable. "
+            "Wins over --disable-mount.",
+        ),
+    ] = None,
+    disable_mount: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--disable-mount",
+            help="Skip default mounts at or below this absolute host path. Repeatable.",
         ),
     ] = None,
     worktree_mount: Annotated[
@@ -142,7 +157,25 @@ def main(
     ] = None,
     env: Annotated[
         list[str] | None,
-        typer.Option("--env", help="Host environment variable to forward. Repeatable."),
+        typer.Option(
+            "--extra-env",
+            help="Host environment variable to forward. Repeatable. Wins over --disable-env.",
+        ),
+    ] = None,
+    disable_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--disable-env",
+            help="Don't forward this built-in host environment variable. Repeatable.",
+        ),
+    ] = None,
+    ssh_agent_flag: Annotated[
+        bool | None,
+        typer.Option(
+            "--ssh-agent/--no-ssh-agent",
+            help="Forward the host SSH agent. Defaults to the config file's ssh_agent (true).",
+            show_default=False,
+        ),
     ] = None,
     debug: Annotated[
         bool, typer.Option("--debug", help="Verbose launcher + assistant debug output.")
@@ -201,7 +234,7 @@ def main(
     host_platform = platform.system()
     host_home = Path.home()
     tool_args = list(tool_args or [])
-    extra_mount_paths = list(mount_extra or [])
+    cli_extra_mounts = [p.expanduser() for p in extra_mount or []]
 
     try:
         resolved_entrypoint = _resolve_entrypoint(
@@ -219,6 +252,17 @@ def main(
                 "(Apple's container tool already runs each container in its own VM)."
             )
         launcher_config = config.load_config(config.config_path(host_home))
+        disabled_mounts = tuple(
+            dict.fromkeys(
+                [
+                    *launcher_config.disable_mounts,
+                    *(
+                        config.normalize_disable_path(p, source="--disable-mount")
+                        for p in disable_mount or []
+                    ),
+                ]
+            )
+        )
         config_add_hosts = _validate_add_hosts(list(launcher_config.add_hosts))
         cli_add_hosts = _validate_add_hosts(list(add_host or []))
         if cli_add_hosts and selected_engine is Engine.CONTAINER:
@@ -267,6 +311,7 @@ def main(
     selinux_status = selinux.detect(host_platform=host_platform, reporter=reporter)
     container_name = random_container_name()
 
+    extra_mount_paths = [*launcher_config.extra_mounts, *cli_extra_mounts]
     if active_workspace is not None:
         extra_mount_paths.extend(active_workspace.dirs)
 
@@ -300,12 +345,19 @@ def main(
         reporter=reporter,
     )
     _apply_gcloud(
-        args, host_home=host_home, selinux_enabled=selinux_status.enabled, reporter=reporter
+        args,
+        host_home=host_home,
+        selinux_enabled=selinux_status.enabled,
+        disabled_mounts=disabled_mounts,
+        reporter=reporter,
     )
     _apply_add_hosts(args, combined_add_hosts, engine=selected_engine, reporter=reporter)
     for spec in mounts.default_mounts(host_home, CONTAINER_HOME, host_platform=host_platform):
         if spec.container in mounted_targets:
             reporter.debug_fail(f"{spec.label} skipped (already mounted): {spec.container}")
+            continue
+        if mounts.is_disabled(spec, disabled_mounts):
+            reporter.debug_fail(f"{spec.label} disabled: {spec.host}")
             continue
         applied = mounts.apply_mount(
             args, spec, selinux_enabled=selinux_status.enabled, reporter=reporter
@@ -316,29 +368,25 @@ def main(
     args.extend(["-e", "OPENCODE_DISABLE_LSP_DOWNLOAD=true"])
     reporter.debug_detail("Setting OPENCODE_DISABLE_LSP_DOWNLOAD=true")
 
-    forwarding = ssh_agent.configure(
-        engine=selected_engine,
-        container_home=CONTAINER_HOME,
-        selinux_enabled=selinux_status.enabled,
-        reporter=reporter,
-    )
+    if ssh_agent_flag if ssh_agent_flag is not None else launcher_config.ssh_agent:
+        forwarding = ssh_agent.configure(
+            engine=selected_engine,
+            container_home=CONTAINER_HOME,
+            selinux_enabled=selinux_status.enabled,
+            reporter=reporter,
+        )
+    else:
+        reporter.debug_fail("SSH agent forwarding disabled")
+        forwarding = ssh_agent.SshForwarding(args=[], env={}, needs_relay_chmod=False)
     args.extend(forwarding.args)
     for key, value in forwarding.env.items():
         args.extend(["-e", f"{key}={value}"])
 
-    env_names: list[str] = list(
-        dict.fromkeys(
-            [
-                "ANTHROPIC_VERTEX_PROJECT_ID",
-                "BUGZILLA_API_KEY",
-                "REDMINE_API_KEY",
-                "PUSHOVER_USER",
-                "PUSHOVER_TOKEN",
-                *launcher_config.env,
-                *(env or []),
-            ]
-        )
-    )
+    disabled_envs = {*launcher_config.disable_envs, *(disable_env or [])}
+    default_envs = [n for n in DEFAULT_FORWARDED_ENVS if n not in disabled_envs]
+    for name in set(DEFAULT_FORWARDED_ENVS) - set(default_envs):
+        reporter.debug_fail(f"{name} disabled")
+    env_names = list(dict.fromkeys([*default_envs, *launcher_config.extra_envs, *(env or [])]))
     for name in env_names:
         _forward_env(args, name, reporter)
 
@@ -368,9 +416,12 @@ def main(
     if debug and resolved_entrypoint.endswith("/opencode"):
         tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
 
-    engine_ops.announce(selected_engine, container_name, reporter=reporter)
-    if active_workspace is not None:
-        reporter.step(f"Workspace: {active_workspace.name}")
+    engine_ops.announce(
+        selected_engine,
+        container_name,
+        reporter=reporter,
+        workspace=active_workspace.name if active_workspace else None,
+    )
     reporter.step(f"Using entrypoint: {resolved_entrypoint}")
     if tool_args:
         reporter.step(f"Passing params: {' '.join(tool_args)}")
@@ -451,9 +502,17 @@ def _apply_add_hosts(
 
 
 def _apply_gcloud(
-    args: list[str], *, host_home: Path, selinux_enabled: bool, reporter: Reporter
+    args: list[str],
+    *,
+    host_home: Path,
+    selinux_enabled: bool,
+    disabled_mounts: tuple[Path, ...],
+    reporter: Reporter,
 ) -> None:
     spec = mounts.gcloud_mount(host_home, CONTAINER_HOME)
+    if mounts.is_disabled(spec, disabled_mounts):
+        reporter.debug_fail(f"{spec.label} disabled: {spec.host}")
+        return
     if not spec.exists():
         reporter.debug_fail(f"Google Cloud credentials not found: {spec.host}")
         return

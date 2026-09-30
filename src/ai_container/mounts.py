@@ -7,6 +7,7 @@ function.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from . import selinux
@@ -84,6 +85,11 @@ def gcloud_env(container_target: Path, project: str | None) -> dict[str, str]:
         env["VERTEXAI_PROJECT"] = project
         env["GCLOUD_PROJECT"] = project
     return env
+
+
+def is_disabled(spec: MountSpec, disabled: Iterable[Path]) -> bool:
+    """True if ``spec.host`` equals or sits below any ``disabled`` path (lexical match)."""
+    return any(spec.host.is_relative_to(entry) for entry in disabled)
 
 
 def _volume_flag(spec: MountSpec, *, selinux_enabled: bool) -> str:

@@ -98,3 +98,16 @@ def test_gcloud_env_omits_project_vars_when_unset(tmp_path: Path) -> None:
     env = mounts.gcloud_env(CONTAINER_HOME / "creds.json", None)
     assert "GOOGLE_CLOUD_PROJECT" not in env
     assert "VERTEXAI_PROJECT" not in env
+
+
+def test_is_disabled_exact_parent_and_non_match(tmp_path: Path) -> None:
+    (spec,) = [
+        m
+        for m in mounts.default_mounts(tmp_path, Path("/c"), host_platform="Linux")
+        if m.label == "AWS config directory"
+    ]
+    assert mounts.is_disabled(spec, [tmp_path / ".aws"])
+    assert mounts.is_disabled(spec, [tmp_path])
+    assert not mounts.is_disabled(spec, [tmp_path / ".aws2"])
+    assert not mounts.is_disabled(spec, [tmp_path / ".aws" / "sub"])
+    assert not mounts.is_disabled(spec, [])
