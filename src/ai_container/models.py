@@ -43,3 +43,12 @@ class MountSpec:
         if self.kind is MountKind.DIRECTORY:
             return self.host.is_dir()
         return self.host.is_file()
+
+
+@dataclass(frozen=True, slots=True)
+class MountEntry:
+    """A user-requested bind mount; ``container=None`` means remap ``host`` under $HOME."""
+
+    host: Path
+    container: Path | None = None
+    access: MountAccess = MountAccess.READ_WRITE

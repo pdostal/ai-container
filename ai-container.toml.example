@@ -11,22 +11,24 @@
 # Flag: --add-host.
 # add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
 
-# Host env var names to forward when set, on top of the built-in list
-# (ANTHROPIC_VERTEX_PROJECT_ID, BUGZILLA_API_KEY, REDMINE_API_KEY, PUSHOVER_USER,
-# PUSHOVER_TOKEN). Wins over disable_envs. Default: []. Flag: --extra-env.
-# extra_envs = ["MY_VARIABLE"]
+# Environment for the container, on top of the built-in Vertex AI variables (see the
+# README). Nothing else is set by default. NAME forwards the host value when
+# set; NAME=value sets a literal, where ${HOST_VAR} expands from the host (entry is
+# skipped if a referenced variable is unset). Flag: --extra-env. Wins over disable_envs.
+# extra_envs = ["BUGZILLA_API_KEY", "OPENCODE_DISABLE_LSP_DOWNLOAD=true", "VERTEXAI_PROJECT=${GCLOUD_PROJECT}"]
 
-# Built-in env var names to NOT forward. Default: []. Flag: --disable-env.
+# Env var names to NOT set, built-in Vertex ones included. Default: []. Flag: --disable-env.
 # disable_envs = ["PUSHOVER_TOKEN"]
 
-# Extra host directories to bind-mount read-write; relative paths resolve from the
-# launch directory. Wins over disable_mounts. Default: []. Flag: --extra-mount / -m.
-# extra_mounts = ["~/src/shared"]
+# Host paths (directories or files) to bind-mount, on top of the built-in rw mounts of
+# ~/.claude, ~/.claude.json and OpenCode's config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
+# Without TARGET, paths under $HOME map to the same place under /home/coder. Relative
+# SOURCEs resolve from the launch directory; missing ones are skipped. The CLI wins on
+# target clashes and over disable_mounts. Default: []. Flag: --extra-mount / -m.
+# extra_mounts = ["~/.claude", "~/.claude.json", "~/.config/gh:ro", "~/src:/opt/src:ro"]
 
-# Absolute host paths; any default credential/cache mount (incl. gcloud) at or below
-# one is skipped. Example: "~/.config" drops gh, glab (Linux), osc, tea, openqa, opencode
-# and gcloud; add "~/.config/gh" to extra_mounts to bring one back (rw).
-# Default: []. Flag: --disable-mount.
+# Absolute host paths; any config or built-in mount (and ~/.ssh/known_hosts) at or below
+# one is skipped. CLI --extra-mount entries are never filtered. Default: []. Flag: --disable-mount.
 # disable_mounts = ["~/.aws", "~/.kube"]
 
 # Load a [[workspace]] automatically when the launch directory is inside its dirs.

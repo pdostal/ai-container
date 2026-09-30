@@ -4,50 +4,12 @@ from pathlib import Path
 
 from ai_container import mounts
 from ai_container.console import Reporter
-from ai_container.models import MountAccess, MountKind
+from ai_container.models import MountAccess, MountKind, MountSpec
 
 CONTAINER_HOME = Path("/home/coder")
 
 
-def test_glab_config_prefers_macos_path_when_present(tmp_path: Path) -> None:
-    mac_dir = tmp_path / "Library/Application Support/glab-cli"
-    mac_dir.mkdir(parents=True)
-    assert mounts.glab_config_dir(tmp_path, host_platform="Darwin") == mac_dir
-
-
-def test_glab_config_falls_back_to_xdg_path_on_macos_without_mac_dir(tmp_path: Path) -> None:
-    result = mounts.glab_config_dir(tmp_path, host_platform="Darwin")
-    assert result == tmp_path / ".config/glab-cli"
-
-
-def test_glab_config_uses_xdg_path_on_linux(tmp_path: Path) -> None:
-    mac_dir = tmp_path / "Library/Application Support/glab-cli"
-    mac_dir.mkdir(parents=True)
-    result = mounts.glab_config_dir(tmp_path, host_platform="Linux")
-    assert result == tmp_path / ".config/glab-cli"
-
-
-def test_default_mounts_cover_expected_labels(tmp_path: Path) -> None:
-    specs = mounts.default_mounts(tmp_path, CONTAINER_HOME, host_platform="Linux")
-    labels = {spec.label for spec in specs}
-    assert "Claude config directory" in labels
-    assert "OpenCode data directory" in labels
-    assert "Kubernetes config" in labels
-    assert "User bin directory" in labels
-    assert len(specs) == len(labels)  # no accidental duplicates
-
-
-def test_user_bin_mount_is_read_only(tmp_path: Path) -> None:
-    specs = mounts.default_mounts(tmp_path, CONTAINER_HOME, host_platform="Linux")
-    spec = next(s for s in specs if s.label == "User bin directory")
-    assert spec.host == tmp_path / "bin"
-    assert spec.container == CONTAINER_HOME / "bin"
-    assert spec.access is MountAccess.READ_ONLY
-
-
 def test_apply_mount_skips_missing_host_path(tmp_path: Path) -> None:
-    from ai_container.models import MountSpec
-
     spec = MountSpec(
         "does-not-exist",
         tmp_path / "nope",
@@ -62,8 +24,6 @@ def test_apply_mount_skips_missing_host_path(tmp_path: Path) -> None:
 
 
 def test_apply_mount_adds_rw_flag_without_selinux(tmp_path: Path) -> None:
-    from ai_container.models import MountSpec
-
     host_dir = tmp_path / "cfg"
     host_dir.mkdir()
     spec = MountSpec(
@@ -76,8 +36,6 @@ def test_apply_mount_adds_rw_flag_without_selinux(tmp_path: Path) -> None:
 
 
 def test_apply_mount_adds_ro_flag_with_selinux(tmp_path: Path) -> None:
-    from ai_container.models import MountSpec
-
     host_file = tmp_path / "known_hosts"
     host_file.write_text("")
     spec = MountSpec("kh", host_file, CONTAINER_HOME / "kh", MountKind.FILE, MountAccess.READ_ONLY)
@@ -86,28 +44,10 @@ def test_apply_mount_adds_ro_flag_with_selinux(tmp_path: Path) -> None:
     assert args == ["-v", f"{host_file}:{CONTAINER_HOME / 'kh'}:Z,ro"]
 
 
-def test_gcloud_mount_and_env(tmp_path: Path) -> None:
-    spec = mounts.gcloud_mount(tmp_path, CONTAINER_HOME)
-    assert spec.host == tmp_path / ".config/gcloud/application_default_credentials.json"
-    env = mounts.gcloud_env(spec.container, "some-project")
-    assert env["GOOGLE_APPLICATION_CREDENTIALS"] == str(spec.container)
-    assert env["GOOGLE_CLOUD_PROJECT"] == "some-project"
-
-
-def test_gcloud_env_omits_project_vars_when_unset(tmp_path: Path) -> None:
-    env = mounts.gcloud_env(CONTAINER_HOME / "creds.json", None)
-    assert "GOOGLE_CLOUD_PROJECT" not in env
-    assert "VERTEXAI_PROJECT" not in env
-
-
 def test_is_disabled_exact_parent_and_non_match(tmp_path: Path) -> None:
-    (spec,) = [
-        m
-        for m in mounts.default_mounts(tmp_path, Path("/c"), host_platform="Linux")
-        if m.label == "AWS config directory"
-    ]
-    assert mounts.is_disabled(spec, [tmp_path / ".aws"])
-    assert mounts.is_disabled(spec, [tmp_path])
-    assert not mounts.is_disabled(spec, [tmp_path / ".aws2"])
-    assert not mounts.is_disabled(spec, [tmp_path / ".aws" / "sub"])
-    assert not mounts.is_disabled(spec, [])
+    host = tmp_path / ".aws"
+    assert mounts.is_disabled(host, [tmp_path / ".aws"])
+    assert mounts.is_disabled(host, [tmp_path])
+    assert not mounts.is_disabled(host, [tmp_path / ".aws2"])
+    assert not mounts.is_disabled(host, [tmp_path / ".aws" / "sub"])
+    assert not mounts.is_disabled(host, [])

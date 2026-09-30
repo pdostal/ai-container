@@ -8,9 +8,12 @@ as a standing default instead of retyping it on every invocation.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from .models import MountAccess, MountEntry
 
 
 class ConfigError(Exception):
@@ -28,7 +31,7 @@ class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
     extra_envs: tuple[str, ...] = ()
     disable_envs: tuple[str, ...] = ()
-    extra_mounts: tuple[Path, ...] = ()
+    extra_mounts: tuple[MountEntry, ...] = ()
     disable_mounts: tuple[Path, ...] = ()
     ssh_agent: bool = True
     workspaces: tuple[Workspace, ...] = ()
@@ -49,6 +52,29 @@ def normalize_disable_path(raw: Path, *, source: str) -> Path:
     if not expanded.is_absolute() or ".." in expanded.parts:
         raise ConfigError(f"{source}: disable path must be absolute without '..': {raw}")
     return expanded
+
+
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def parse_mount(raw: str, *, source: str) -> MountEntry:
+    """Parse ``SOURCE[:TARGET][:ro|rw]`` (``~`` expanded in SOURCE, TARGET absolute)."""
+    parts = raw.split(":")
+    access = MountAccess(parts.pop()) if len(parts) > 1 and parts[-1] in ("ro", "rw") else None
+    target = Path(parts[1]) if len(parts) == 2 else None
+    if not 1 <= len(parts) <= 2 or not parts[0] or (target and not target.is_absolute()):
+        raise ConfigError(
+            f"{source}: invalid mount {raw!r} (expected SOURCE[:ABSOLUTE_TARGET][:ro|rw])"
+        )
+    return MountEntry(Path(parts[0]).expanduser(), target, access or MountAccess.READ_WRITE)
+
+
+def env_name(entry: str, *, source: str) -> str:
+    """Validate an env entry (``NAME`` or ``NAME=value``) and return ``NAME``."""
+    name = entry.partition("=")[0]
+    if not _ENV_NAME_RE.fullmatch(name):
+        raise ConfigError(f"{source}: invalid environment entry {entry!r} (expected NAME[=value])")
+    return name
 
 
 def _str_list(path: Path, data: dict[str, object], key: str) -> tuple[str, ...]:
@@ -76,7 +102,14 @@ def load_config(path: Path) -> LauncherConfig:
         normalize_disable_path(Path(d), source=f"{path}: 'disable_mounts'")
         for d in _str_list(path, data, "disable_mounts")
     )
-    extra_mounts = tuple(Path(d).expanduser() for d in _str_list(path, data, "extra_mounts"))
+    extra_mounts = tuple(
+        parse_mount(m, source=f"{path}: 'extra_mounts'")
+        for m in _str_list(path, data, "extra_mounts")
+    )
+    extra_envs = _str_list(path, data, "extra_envs")
+    disable_envs = _str_list(path, data, "disable_envs")
+    for entry in (*extra_envs, *disable_envs):
+        env_name(entry, source=str(path))
 
     ssh_agent = data.get("ssh_agent", True)
     if not isinstance(ssh_agent, bool):
@@ -93,8 +126,8 @@ def load_config(path: Path) -> LauncherConfig:
 
     return LauncherConfig(
         add_hosts=_str_list(path, data, "add_hosts"),
-        extra_envs=_str_list(path, data, "extra_envs"),
-        disable_envs=_str_list(path, data, "disable_envs"),
+        extra_envs=extra_envs,
+        disable_envs=disable_envs,
         extra_mounts=extra_mounts,
         disable_mounts=disable_mounts,
         ssh_agent=ssh_agent,

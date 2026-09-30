@@ -442,13 +442,234 @@ def test_explicit_entrypoint_wins_over_claude(
     assert "/home/coder/.local/bin/claude" not in argv
 
 
-def test_existing_credential_directory_gets_mounted(
+def test_no_tool_mounts_or_envs_without_config(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (isolated_home / ".config/gh").mkdir(parents=True)
+    monkeypatch.setenv("BUGZILLA_API_KEY", "bz")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert not any("/.config/gh" in a for a in argv)
+    assert not any(a.startswith(("BUGZILLA_API_KEY=", "OPENCODE_")) for a in argv)
+
+
+def _make_assistant_paths(home: Path) -> None:
+    for d in (".claude", ".config/opencode", ".local/share/opencode"):
+        (home / d).mkdir(parents=True)
+    (home / ".claude.json").write_text("{}")
+
+
+def test_assistant_mounts_are_automatic_and_read_write(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _make_assistant_paths(isolated_home)
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    for rel in (".claude", ".claude.json", ".config/opencode", ".local/share/opencode"):
+        assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
+    assert not _mount_flags_targeting(argv, "/home/coder/.cache/opencode")  # missing on host
+
+
+def test_assistant_mounts_can_be_disabled_and_config_overrides(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _make_assistant_paths(isolated_home)
+    _write_config(
+        isolated_home,
+        'disable_mounts = ["~/.config"]\nextra_mounts = ["~/.claude:ro"]\n',
+    )
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert f"{isolated_home}/.claude:/home/coder/.claude:ro" in argv
+    assert f"{isolated_home}/.claude.json:/home/coder/.claude.json" in argv
+    assert not _mount_flags_targeting(argv, "/home/coder/.config/opencode")
+
+
+_VERTEX_VARS = (
+    "VERTEX_LOCATION",
+    "GCLOUD_PROJECT",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLOUD_ML_REGION",
+)
+
+
+@pytest.fixture
+def clean_vertex_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in _VERTEX_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_vertex_defaults_are_gated_by_vertex_location(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GCLOUD_PROJECT", "proj")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert {"ANTHROPIC_VERTEX_PROJECT_ID=proj", "GOOGLE_CLOUD_PROJECT=proj"} <= set(argv)
+    assert not any(a.startswith(("CLAUDE_CODE_USE_VERTEX=", "CLOUD_ML_REGION=")) for a in argv)
+    assert not any(a.startswith("VERTEX_LOCATION=") for a in argv)
+    captured_run.clear()
+    monkeypatch.setenv("VERTEX_LOCATION", "global")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert {"CLAUDE_CODE_USE_VERTEX=1", "CLOUD_ML_REGION=global", "VERTEX_LOCATION=global"} <= set(
+        argv
+    )
+
+
+def test_vertex_project_vars_skipped_without_gcloud_project(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert not any(
+        a.startswith(("ANTHROPIC_VERTEX_PROJECT_ID=", "GOOGLE_CLOUD_PROJECT=")) for a in argv
+    )
+
+
+def test_vertex_credentials_file_mounted_read_only(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}")
+    target = "/home/coder/.config/gcloud/application_default_credentials.json"
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert f"{creds}:{target}:ro" in argv
+    assert f"GOOGLE_APPLICATION_CREDENTIALS={target}" in argv
+
+
+def test_vertex_credentials_missing_file_skipped(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/does/not/exist.json")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert not any(a.startswith("GOOGLE_APPLICATION_CREDENTIALS=") for a in argv)
+    assert not any("exist.json" in a for a in argv)
+
+
+def test_disable_mount_removes_credentials_mount_and_env(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--disable-mount", str(tmp_path)])
+    (argv,) = captured_run
+    assert not any("application_default_credentials" in a for a in argv)
+    assert not any(a.startswith("GOOGLE_APPLICATION_CREDENTIALS=") for a in argv)
+
+
+def test_disable_env_and_config_override_vertex_defaults(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    clean_vertex_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VERTEX_LOCATION", "global")
+    monkeypatch.setenv("GCLOUD_PROJECT", "proj")
+    _write_config(isolated_home, 'extra_envs = ["CLOUD_ML_REGION=eu"]\n')
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--disable-env", "CLAUDE_CODE_USE_VERTEX"])
+    (argv,) = captured_run
+    assert "CLOUD_ML_REGION=eu" in argv
+    assert "CLOUD_ML_REGION=global" not in argv
+    assert not any(a.startswith("CLAUDE_CODE_USE_VERTEX=") for a in argv)
+
+
+def test_config_mounts_dirs_files_access_and_explicit_target(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
     (isolated_home / ".claude").mkdir()
-    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (isolated_home / ".claude.json").write_text("{}")
+    (isolated_home / ".config/gh").mkdir(parents=True)
+    (isolated_home / "src").mkdir()
+    _write_config(
+        isolated_home,
+        'extra_mounts = ["~/.claude", "~/.claude.json", "~/.config/gh:ro", "~/src:/opt/src:ro"]\n',
+    )
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
     (argv,) = captured_run
     assert f"{isolated_home}/.claude:/home/coder/.claude" in argv
+    assert f"{isolated_home}/.claude.json:/home/coder/.claude.json" in argv
+    assert f"{isolated_home}/.config/gh:/home/coder/.config/gh:ro" in argv
+    assert f"{isolated_home}/src:/opt/src:ro" in argv
+
+
+def test_ro_mount_uses_private_selinux_label(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(selinux, "detect", lambda **_kw: selinux.SELinuxStatus(enabled=True))
+    (isolated_home / "a").mkdir()
+    (isolated_home / "b").mkdir()
+    _write_config(isolated_home, 'extra_mounts = ["~/a:ro", "~/b"]\n')
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert f"{isolated_home}/a:/home/coder/a:Z,ro" in argv
+    assert f"{isolated_home}/b:/home/coder/b:z" in argv
+
+
+def test_invalid_extra_mount_flag_errors(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-mount", "a:rel"])
+    assert result.exit_code == 1
+    assert "invalid mount" in result.output
+
+
+def test_known_hosts_mounted_read_only_and_disableable(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    (isolated_home / ".ssh").mkdir()
+    (isolated_home / ".ssh/known_hosts").write_text("")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert f"{isolated_home}/.ssh/known_hosts:/home/coder/.ssh/known_hosts:ro" in argv
+    captured_run.clear()
+    runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--disable-mount", str(isolated_home / ".ssh")]
+    )
+    (argv,) = captured_run
+    assert not _mount_flags_targeting(argv, "/home/coder/.ssh/known_hosts")
 
 
 def test_missing_credential_directory_is_not_mounted(
@@ -501,7 +722,7 @@ def _mount_flags_targeting(argv: list[str], target: str) -> list[str]:
     ]
 
 
-def test_default_mount_skipped_when_workdir_target_collides(
+def test_config_mount_skipped_when_workdir_target_collides(
     isolated_home: Path,
     fake_engine_path: Path,
     captured_run: list[list[str]],
@@ -509,16 +730,17 @@ def test_default_mount_skipped_when_workdir_target_collides(
 ) -> None:
     bin_dir = isolated_home / "bin"
     bin_dir.mkdir()
+    _write_config(isolated_home, 'extra_mounts = ["~/bin:ro"]\n')
     monkeypatch.chdir(bin_dir)
     result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
     assert result.exit_code == 0, result.output
     (argv,) = captured_run
     bin_flags = _mount_flags_targeting(argv, "/home/coder/bin")
     assert len(bin_flags) == 1
-    assert "type=bind" in bin_flags[0]  # the rw workdir mount, not the ro default mount
+    assert "type=bind" in bin_flags[0]  # the rw workdir mount, not the ro config mount
 
 
-def test_default_mount_skipped_when_extra_mount_target_collides(
+def test_cli_mount_wins_over_config_mount_for_same_target(
     isolated_home: Path,
     workdir: Path,
     fake_engine_path: Path,
@@ -526,12 +748,11 @@ def test_default_mount_skipped_when_extra_mount_target_collides(
 ) -> None:
     bin_dir = isolated_home / "bin"
     bin_dir.mkdir()
+    _write_config(isolated_home, 'extra_mounts = ["~/bin:ro"]\n')
     result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-mount", str(bin_dir)])
     assert result.exit_code == 0, result.output
     (argv,) = captured_run
-    bin_flags = _mount_flags_targeting(argv, "/home/coder/bin")
-    assert len(bin_flags) == 1
-    assert "type=bind" in bin_flags[0]  # the rw extra mount, not the ro default mount
+    assert _mount_flags_targeting(argv, "/home/coder/bin") == [f"{bin_dir}:/home/coder/bin"]
 
 
 def test_web_mode_sets_detach_and_port(
@@ -593,7 +814,7 @@ def test_no_worktree_mount_disables_autodetection(
     assert not any("should/not/be/used" in flag for flag in argv)
 
 
-def test_gcloud_credentials_mounted_when_present(
+def test_env_assignment_expands_host_references(
     isolated_home: Path,
     workdir: Path,
     fake_engine_path: Path,
@@ -601,18 +822,16 @@ def test_gcloud_credentials_mounted_when_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GCLOUD_PROJECT", "some-project")
-    gcloud_dir = isolated_home / ".config/gcloud"
-    gcloud_dir.mkdir(parents=True)
-    (gcloud_dir / "application_default_credentials.json").write_text("{}")
+    _write_config(
+        isolated_home,
+        'extra_envs = ["LIT=global", "P=${GCLOUD_PROJECT}", "Q=a${GCLOUD_PROJECT}b"]\n',
+    )
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert any("application_default_credentials.json" in flag for flag in argv)
-    assert "GOOGLE_CLOUD_PROJECT=some-project" in argv
-    assert "GOOGLE_VERTEX_PROJECT=some-project" in argv
-    assert "GCLOUD_PROJECT=some-project" in argv
+    assert {"LIT=global", "P=some-project", "Q=asome-projectb"} <= set(argv)
 
 
-def test_gcloud_project_env_vars_omitted_when_unset(
+def test_env_assignment_skipped_when_reference_unset(
     isolated_home: Path,
     workdir: Path,
     fake_engine_path: Path,
@@ -620,16 +839,29 @@ def test_gcloud_project_env_vars_omitted_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GCLOUD_PROJECT", raising=False)
-    monkeypatch.delenv("ANTHROPIC_VERTEX_PROJECT_ID", raising=False)
-    gcloud_dir = isolated_home / ".config/gcloud"
-    gcloud_dir.mkdir(parents=True)
-    (gcloud_dir / "application_default_credentials.json").write_text("{}")
+    _write_config(isolated_home, 'extra_envs = ["P=${GCLOUD_PROJECT}", "LIT=1"]\n')
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert not any(flag.startswith("GOOGLE_CLOUD_PROJECT=") for flag in argv)
-    assert not any(flag.startswith("GOOGLE_VERTEX_PROJECT=") for flag in argv)
-    assert not any(flag.startswith("VERTEXAI_PROJECT=") for flag in argv)
-    assert not any(flag.startswith("GCLOUD_PROJECT=") for flag in argv)
+    assert not any(a.startswith("P=") for a in argv)
+    assert "LIT=1" in argv
+
+
+def test_cli_env_assignment_overrides_config_value(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'extra_envs = ["X=config"]\n')
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-env", "X=cli"])
+    (argv,) = captured_run
+    assert "X=cli" in argv
+    assert "X=config" not in argv
+
+
+def test_invalid_extra_env_flag_errors(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-env", "=x"])
+    assert result.exit_code == 1
+    assert "invalid environment entry" in result.output
 
 
 def test_extra_mount_path_that_does_not_exist_is_skipped(
@@ -641,7 +873,7 @@ def test_extra_mount_path_that_does_not_exist_is_skipped(
     assert not any("/does/not/exist" in flag for flag in argv)
 
 
-def test_bugzilla_and_redmine_keys_forwarded(
+def test_config_env_names_forwarded_bugzilla_redmine(
     isolated_home: Path,
     workdir: Path,
     fake_engine_path: Path,
@@ -650,13 +882,14 @@ def test_bugzilla_and_redmine_keys_forwarded(
 ) -> None:
     monkeypatch.setenv("BUGZILLA_API_KEY", "bz-secret")
     monkeypatch.setenv("REDMINE_API_KEY", "rm-secret")
+    _write_config(isolated_home, 'extra_envs = ["BUGZILLA_API_KEY", "REDMINE_API_KEY"]\n')
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
     assert "BUGZILLA_API_KEY=bz-secret" in argv
     assert "REDMINE_API_KEY=rm-secret" in argv
 
 
-def test_pushover_keys_forwarded(
+def test_config_env_names_forwarded_pushover(
     isolated_home: Path,
     workdir: Path,
     fake_engine_path: Path,
@@ -665,6 +898,7 @@ def test_pushover_keys_forwarded(
 ) -> None:
     monkeypatch.setenv("PUSHOVER_USER", "po-user")
     monkeypatch.setenv("PUSHOVER_TOKEN", "po-token")
+    _write_config(isolated_home, 'extra_envs = ["PUSHOVER_USER", "PUSHOVER_TOKEN"]\n')
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
     assert "PUSHOVER_USER=po-user" in argv
@@ -785,7 +1019,10 @@ def test_disable_mounts_from_config_and_flag(
 ) -> None:
     for d in (".aws", ".kube", ".npm"):
         (isolated_home / d).mkdir()
-    _write_config(isolated_home, 'disable_mounts = ["~/.aws"]\n')
+    _write_config(
+        isolated_home,
+        'extra_mounts = ["~/.aws", "~/.kube", "~/.npm"]\ndisable_mounts = ["~/.aws"]\n',
+    )
     runner.invoke(
         cli_mod.app, ["--runtime", "podman", "--disable-mount", str(isolated_home / ".kube")]
     )
@@ -803,39 +1040,33 @@ def test_disable_mount_rejects_relative_path(
     assert "absolute" in result.output
 
 
-def test_disable_mounts_parent_path_disables_gcloud(
+def test_disable_mounts_parent_path_filters_config_mounts(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
-    gcloud_dir = isolated_home / ".config/gcloud"
-    gcloud_dir.mkdir(parents=True)
-    (gcloud_dir / "application_default_credentials.json").write_text("{}")
-    _write_config(isolated_home, 'disable_mounts = ["~/.config"]\n')
+    (isolated_home / ".config/gh").mkdir(parents=True)
+    _write_config(
+        isolated_home, 'extra_mounts = ["~/.config/gh:ro"]\ndisable_mounts = ["~/.config"]\n'
+    )
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert not any("application_default_credentials.json" in a for a in argv)
-    assert not any(a.startswith("GOOGLE_APPLICATION_CREDENTIALS=") for a in argv)
+    assert not _mount_flags_targeting(argv, "/home/coder/.config/gh")
 
 
-@pytest.mark.parametrize("via", ["config", "cli"])
-def test_extra_mount_wins_over_disabled_parent(
-    isolated_home: Path,
-    workdir: Path,
-    fake_engine_path: Path,
-    captured_run: list[list[str]],
-    via: str,
+def test_cli_extra_mount_wins_over_disabled_parent(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
     for d in ("gh", "osc"):
         (isolated_home / ".config" / d).mkdir(parents=True)
     gh = isolated_home / ".config/gh"
-    if via == "config":
-        _write_config(isolated_home, f'disable_mounts = ["~/.config"]\nextra_mounts = ["{gh}"]\n')
-        cli_args: list[str] = []
-    else:
-        cli_args = ["--disable-mount", str(isolated_home / ".config"), "--extra-mount", str(gh)]
-    runner.invoke(cli_mod.app, ["--runtime", "podman", *cli_args])
+    _write_config(
+        isolated_home,
+        'disable_mounts = ["~/.config"]\nextra_mounts = ["~/.config/gh", "~/.config/osc"]\n',
+    )
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-mount", str(gh)])
     (argv,) = captured_run
-    (gh_flag,) = _mount_flags_targeting(argv, "/home/coder/.config/gh")
-    assert "type=bind" in gh_flag
+    assert _mount_flags_targeting(argv, "/home/coder/.config/gh") == [
+        f"{gh}:/home/coder/.config/gh"
+    ]
     assert not _mount_flags_targeting(argv, "/home/coder/.config/osc")
 
 
@@ -852,8 +1083,8 @@ def test_config_extra_mounts_merge_with_cli_and_relative_uses_cwd(
     _write_config(isolated_home, 'extra_mounts = ["rel"]\n')
     runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-mount", str(cli_dir)])
     (argv,) = captured_run
-    assert any(f"source={workdir / 'rel'}," in a for a in argv)
-    assert any(f"source={cli_dir}," in a for a in argv)
+    assert any(a.startswith(f"{workdir / 'rel'}:") for a in argv)
+    assert any(a.startswith(f"{cli_dir}:") for a in argv)
 
 
 def test_disable_envs_filters_builtins_and_extras_restore(
@@ -868,9 +1099,20 @@ def test_disable_envs_filters_builtins_and_extras_restore(
     monkeypatch.setenv("BUGZILLA_API_KEY", "b")
     _write_config(
         isolated_home,
-        'disable_envs = ["PUSHOVER_USER", "PUSHOVER_TOKEN"]\nextra_envs = ["PUSHOVER_TOKEN"]\n',
+        'extra_envs = ["PUSHOVER_USER", "PUSHOVER_TOKEN", "BUGZILLA_API_KEY"]\n'
+        'disable_envs = ["PUSHOVER_USER", "PUSHOVER_TOKEN"]\n',
     )
-    runner.invoke(cli_mod.app, ["--runtime", "podman", "--disable-env", "BUGZILLA_API_KEY"])
+    runner.invoke(
+        cli_mod.app,
+        [
+            "--runtime",
+            "podman",
+            "--disable-env",
+            "BUGZILLA_API_KEY",
+            "--extra-env",
+            "PUSHOVER_TOKEN",
+        ],
+    )
     (argv,) = captured_run
     assert "PUSHOVER_USER=u" not in argv
     assert "BUGZILLA_API_KEY=b" not in argv
@@ -885,6 +1127,7 @@ def test_extra_env_cli_restores_disabled_builtin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("REDMINE_API_KEY", "r")
+    _write_config(isolated_home, 'extra_envs = ["REDMINE_API_KEY"]\n')
     runner.invoke(
         cli_mod.app,
         [

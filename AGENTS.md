@@ -36,12 +36,13 @@ src/ai_container/
   cli.py         Typer app: option parsing, orchestration, the "wrapper opts -- tool args" split
   console.py     Rich-backed Reporter (✓/✗/▶ output, gated debug lines)
   engine.py      podman/`container` engine selection + per-engine argument differences
-  models.py      Engine enum, MountSpec/MountKind/MountAccess dataclasses
+  models.py      Engine enum, MountSpec/MountEntry/MountKind/MountAccess dataclasses
   paths.py       host<->container path remapping, $HOME-as-workdir guard
   git_utils.py   git worktree detection
   selinux.py     sestatus parsing + the :z/:Z suffix rules
-  mounts.py      the declarative table of ~20 conditional credential/cache mounts
-  config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra/disable envs+mounts, ssh_agent, workspaces
+  defaults.py    built-in assistant mounts + host-driven Vertex AI envs/credentials mount
+  mounts.py      `-v` flag builder (apply_mount) + the disable-path filter
+  config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra/disable envs+mounts (SOURCE[:TARGET][:ro|rw], NAME[=value]), ssh_agent, workspaces
   ssh_agent.py   SSH agent forwarding + the `container --ssh` rootless relay chmod workaround
   web.py         --web mode (random password, host IP detection, banner)
   naming.py      random container names / web passwords
@@ -54,7 +55,7 @@ scripts/
 
 ## Code style
 
-- Small, single-purpose modules over one big script — this rewrite specifically replaced ~20 copy-pasted "if directory/file exists, mount it" bash blocks with one declarative `MountSpec` table (`mounts.py`) plus a single `apply_mount()`. Keep new mounts/features that fit this shape declarative rather than adding another bespoke `if` block.
+- Small, single-purpose modules over one big script. Tool mounts and env vars are not hardcoded: they live in the user's config (`extra_mounts`/`extra_envs`) and go through one `_apply_mounts()`/`apply_mount()` path. Only the assistant-state mounts, the Vertex defaults (`defaults.py`), SSH (agent + `known_hosts`) and launch-time mechanics (workdir, worktree, `HOME`, web auth) stay in code.
 - Prefer pure functions that take explicit parameters (`host_home`, `container_home`, `host_platform`, ...) over reading global state, so they stay trivially testable.
 - Keep comments terse; only add them where the *why* isn't obvious from the code (e.g. the SELinux `:z`/`:Z` suffix rules, the `container --ssh` root-owned relay socket workaround).
 - Full type hints everywhere; `mypy --strict` must pass with zero ignores added without a comment explaining why.

@@ -22,17 +22,29 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from . import __version__, config, git_utils, mounts, paths, rich_patches, selinux, ssh_agent, web
+from . import (
+    __version__,
+    config,
+    defaults,
+    git_utils,
+    mounts,
+    paths,
+    rich_patches,
+    selinux,
+    ssh_agent,
+    web,
+)
 from . import engine as engine_ops
 from . import workspace as workspace_ops
 from .console import Reporter
-from .models import Engine
+from .models import Engine, MountAccess, MountEntry, MountKind, MountSpec
 from .naming import random_container_name
 from .runner import build_argv, run, spawn_relay_chmod_fix
 
@@ -53,13 +65,7 @@ app = typer.Typer(
 )
 
 CONTAINER_HOME = Path("/home/coder")
-DEFAULT_FORWARDED_ENVS = (
-    "ANTHROPIC_VERTEX_PROJECT_ID",
-    "BUGZILLA_API_KEY",
-    "REDMINE_API_KEY",
-    "PUSHOVER_USER",
-    "PUSHOVER_TOKEN",
-)
+_ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 DEFAULT_OPENCODE_ENTRYPOINT = str(CONTAINER_HOME / ".opencode/bin/opencode")
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
 
@@ -126,12 +132,12 @@ def main(
         ),
     ] = None,
     extra_mount: Annotated[
-        list[Path] | None,
+        list[str] | None,
         typer.Option(
             "--extra-mount",
             "-m",
-            help="Extra host directory to bind-mount read-write. Repeatable. "
-            "Wins over --disable-mount.",
+            help="Bind mount SOURCE[:TARGET][:ro|rw] (default rw; directory or file). "
+            "Repeatable. Wins over --disable-mount.",
         ),
     ] = None,
     disable_mount: Annotated[
@@ -159,14 +165,15 @@ def main(
         list[str] | None,
         typer.Option(
             "--extra-env",
-            help="Host environment variable to forward. Repeatable. Wins over --disable-env.",
+            help="Forward NAME from the host, or set NAME=value (${HOST_VAR} expands from "
+            "the host). Repeatable. Wins over --disable-env.",
         ),
     ] = None,
     disable_env: Annotated[
         list[str] | None,
         typer.Option(
             "--disable-env",
-            help="Don't forward this built-in host environment variable. Repeatable.",
+            help="Don't set this NAME (built-in defaults and config extra_envs). Repeatable.",
         ),
     ] = None,
     ssh_agent_flag: Annotated[
@@ -235,9 +242,10 @@ def main(
     host_platform = platform.system()
     host_home = Path.home()
     tool_args = list(tool_args or [])
-    cli_extra_mounts = [p.expanduser() for p in extra_mount or []]
 
     try:
+        cli_mounts = [config.parse_mount(m, source="--extra-mount") for m in extra_mount or []]
+        cli_envs = {config.env_name(e, source="--extra-env"): e for e in env or []}
         resolved_entrypoint = _resolve_entrypoint(
             entrypoint=entrypoint, claude=claude, opencode=opencode
         )
@@ -319,14 +327,14 @@ def main(
     selinux_enabled = selinux_status.enabled and selected_engine is not Engine.DOCKER
     container_name = random_container_name()
 
-    extra_mount_paths = [*launcher_config.extra_mounts, *cli_extra_mounts]
+    local_mounts: list[MountEntry] = []
     if active_workspace is not None:
-        extra_mount_paths.extend(active_workspace.dirs)
+        local_mounts.extend(MountEntry(d) for d in active_workspace.dirs)
 
     if worktree_mount:
         worktree_parent = git_utils.detect_worktree_parent(cwd)
         if worktree_parent is not None:
-            extra_mount_paths.append(worktree_parent)
+            local_mounts.append(MountEntry(worktree_parent))
             reporter.ok(f"Detected git worktree; auto-mounting parent repo: {worktree_parent}")
 
     args: list[str] = [
@@ -344,36 +352,36 @@ def main(
     reporter.debug_ok(f"Mounting working directory (bind-mount, rw): {cwd} \u2192 {target_workdir}")
 
     mounted_targets: set[Path] = {target_workdir}
-    _apply_extra_mounts(
-        args,
-        extra_mount_paths,
-        mounted_targets=mounted_targets,
-        host_home=host_home,
-        selinux_enabled=selinux_enabled,
-        reporter=reporter,
+    known_hosts = MountEntry(
+        host_home / ".ssh/known_hosts", CONTAINER_HOME / ".ssh/known_hosts", MountAccess.READ_ONLY
     )
-    _apply_gcloud(
-        args,
-        host_home=host_home,
-        selinux_enabled=selinux_enabled,
-        disabled_mounts=disabled_mounts,
-        reporter=reporter,
-    )
+    credentials = defaults.vertex_credentials(os.environ, cwd=cwd, container_home=CONTAINER_HOME)
+    if credentials and mounts.is_disabled(credentials[0].host, disabled_mounts):
+        reporter.debug_fail(f"Vertex credentials disabled: {credentials[0].host}")
+        credentials = None
+    default_mounts = [
+        *defaults.assistant_mounts(host_home),
+        *([credentials[0]] if credentials else []),
+    ]
+    # First mount of a target wins: CLI, config, workspace/worktree, built-in defaults, SSH.
+    for entries, disabled in (
+        (cli_mounts, ()),
+        (launcher_config.extra_mounts, disabled_mounts),
+        (local_mounts, ()),
+        (default_mounts, disabled_mounts),
+        ([known_hosts], disabled_mounts),
+    ):
+        _apply_mounts(
+            args,
+            entries,
+            mounted_targets=mounted_targets,
+            disabled=disabled,
+            cwd=cwd,
+            host_home=host_home,
+            selinux_enabled=selinux_enabled,
+            reporter=reporter,
+        )
     _apply_add_hosts(args, combined_add_hosts, engine=selected_engine, reporter=reporter)
-    for spec in mounts.default_mounts(host_home, CONTAINER_HOME, host_platform=host_platform):
-        if spec.container in mounted_targets:
-            reporter.debug_fail(f"{spec.label} skipped (already mounted): {spec.container}")
-            continue
-        if mounts.is_disabled(spec, disabled_mounts):
-            reporter.debug_fail(f"{spec.label} disabled: {spec.host}")
-            continue
-        applied = mounts.apply_mount(args, spec, selinux_enabled=selinux_enabled, reporter=reporter)
-        if applied:
-            mounted_targets.add(spec.container)
-
-    args.extend(["-e", "OPENCODE_DISABLE_LSP_DOWNLOAD=true"])
-    reporter.debug_detail("Setting OPENCODE_DISABLE_LSP_DOWNLOAD=true")
-
     if ssh_agent_flag if ssh_agent_flag is not None else launcher_config.ssh_agent:
         forwarding = ssh_agent.configure(
             engine=selected_engine,
@@ -390,12 +398,17 @@ def main(
         args.extend(["-e", f"{key}={value}"])
 
     disabled_envs = {*launcher_config.disable_envs, *(disable_env or [])}
-    default_envs = [n for n in DEFAULT_FORWARDED_ENVS if n not in disabled_envs]
-    for name in set(DEFAULT_FORWARDED_ENVS) - set(default_envs):
-        reporter.debug_fail(f"{name} disabled")
-    env_names = list(dict.fromkeys([*default_envs, *launcher_config.extra_envs, *(env or [])]))
-    for name in env_names:
-        _forward_env(args, name, reporter)
+    env_entries: dict[str, str] = {}
+    default_envs = [*defaults.vertex_envs(os.environ), *([credentials[1]] if credentials else [])]
+    for entry in [*default_envs, *launcher_config.extra_envs]:
+        name = config.env_name(entry, source="config")
+        if name in disabled_envs:
+            reporter.debug_fail(f"{name} disabled")
+        else:
+            env_entries[name] = entry
+    env_entries.update(cli_envs)
+    for entry in env_entries.values():
+        _apply_env(args, entry, reporter)
 
     if web_mode:
         web_config = web.configure(
@@ -458,29 +471,32 @@ def _resolve_entrypoint(*, entrypoint: str | None, claude: bool, opencode: bool)
     return DEFAULT_OPENCODE_ENTRYPOINT
 
 
-def _apply_extra_mounts(
+def _apply_mounts(
     args: list[str],
-    extra_mount_paths: list[Path],
+    entries: list[MountEntry] | tuple[MountEntry, ...],
     *,
     mounted_targets: set[Path],
+    disabled: tuple[Path, ...],
+    cwd: Path,
     host_home: Path,
     selinux_enabled: bool,
     reporter: Reporter,
 ) -> None:
-    for raw_path in extra_mount_paths:
-        if not raw_path.is_dir():
-            reporter.debug_fail(f"Extra mount path not found, skipping: {raw_path}")
+    for entry in entries:
+        host = Path(os.path.normpath(cwd / entry.host))
+        if mounts.is_disabled(host, disabled):
+            reporter.debug_fail(f"Mount disabled: {host}")
             continue
-        resolved = raw_path.resolve()
-        target = paths.map_to_container_path(
-            resolved, host_home=host_home, container_home=CONTAINER_HOME
+        target = entry.container or paths.map_to_container_path(
+            host, host_home=host_home, container_home=CONTAINER_HOME
         )
         if target in mounted_targets:
+            reporter.debug_fail(f"{target} skipped (already mounted)")
             continue
-        mounted_targets.add(target)
-        reporter.debug_ok(f"Mounting extra directory (bind-mount, rw): {resolved} \u2192 {target}")
-        suffix = selinux.bind_suffix(selinux_enabled)
-        args.append(f"--mount=type=bind,source={resolved},target={target}{suffix}")
+        kind = MountKind.DIRECTORY if host.is_dir() else MountKind.FILE
+        spec = MountSpec(str(target), host, target, kind, entry.access)
+        if mounts.apply_mount(args, spec, selinux_enabled=selinux_enabled, reporter=reporter):
+            mounted_targets.add(target)
 
 
 def _validate_add_hosts(entries: list[str]) -> list[str]:
@@ -508,39 +524,20 @@ def _apply_add_hosts(
         args.append(f"--add-host={entry}")
 
 
-def _apply_gcloud(
-    args: list[str],
-    *,
-    host_home: Path,
-    selinux_enabled: bool,
-    disabled_mounts: tuple[Path, ...],
-    reporter: Reporter,
-) -> None:
-    spec = mounts.gcloud_mount(host_home, CONTAINER_HOME)
-    if mounts.is_disabled(spec, disabled_mounts):
-        reporter.debug_fail(f"{spec.label} disabled: {spec.host}")
-        return
-    if not spec.exists():
-        reporter.debug_fail(f"Google Cloud credentials not found: {spec.host}")
-        return
-    reporter.debug_ok(f"Mounting Google Cloud credentials (bind-mount, ro): {spec.host}")
-    suffix = selinux.volume_ro_suffix(selinux_enabled)
-    args.extend(["-v", f"{spec.host}:{spec.container}{suffix}"])
-    project = os.environ.get("GCLOUD_PROJECT") or os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
-    if not project:
-        reporter.debug_fail("GCLOUD_PROJECT / ANTHROPIC_VERTEX_PROJECT_ID not set")
-    for key, value in mounts.gcloud_env(spec.container, project).items():
-        args.extend(["-e", f"{key}={value}"])
-        reporter.debug_detail(f"Setting {key}={value}")
-
-
-def _forward_env(args: list[str], name: str, reporter: Reporter) -> None:
-    value = os.environ.get(name)
-    if value:
-        reporter.debug_ok(f"Forwarding {name} environment variable")
-        args.extend(["-e", f"{name}={value}"])
+def _apply_env(args: list[str], entry: str, reporter: Reporter) -> None:
+    """Forward ``NAME`` if set on the host, or set ``NAME=value`` expanding ``${HOST_VAR}``."""
+    name, sep, raw = entry.partition("=")
+    if sep:
+        missing = [v for v in _ENV_REF_RE.findall(raw) if not os.environ.get(v)]
+        value = None if missing else _ENV_REF_RE.sub(lambda m: os.environ[m[1]], raw)
+        reason = f"{name} skipped ({', '.join(missing)} not set)"
     else:
-        reporter.debug_fail(f"{name} not set")
+        value, reason = os.environ.get(name) or None, f"{name} not set"
+    if value is None:
+        reporter.debug_fail(reason)
+        return
+    reporter.debug_ok(f"Setting {name} environment variable")
+    args.extend(["-e", f"{name}={value}"])
 
 
 def run_app() -> None:

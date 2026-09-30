@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from ai_container import config
+from ai_container.models import MountAccess, MountEntry
 
 
 def test_config_path_defaults_to_dot_config(
@@ -151,7 +152,7 @@ def test_load_config_reads_new_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert result.ssh_agent is False
     assert result.disable_envs == ("A",)
     assert result.disable_mounts == (tmp_path / ".aws", Path("/opt/x"))
-    assert result.extra_mounts == (tmp_path / "src", Path("rel/dir"))
+    assert result.extra_mounts == (MountEntry(tmp_path / "src"), MountEntry(Path("rel/dir")))
 
 
 @pytest.mark.parametrize(
@@ -161,6 +162,13 @@ def test_load_config_reads_new_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         "disable_envs = [1]",
         'disable_mounts = "x"',
         'extra_mounts = "x"',
+        'extra_mounts = ["a:b"]',
+        'extra_mounts = ["a:/b:c"]',
+        'extra_mounts = [":ro"]',
+        'extra_mounts = ["a:b:c:ro"]',
+        'extra_envs = ["=x"]',
+        'extra_envs = ["BAD NAME"]',
+        'disable_envs = ["1A"]',
         'disable_mounts = ["relative/dir"]',
         'disable_mounts = ["/a/../b"]',
     ],
@@ -170,6 +178,26 @@ def test_load_config_rejects_bad_new_keys(tmp_path: Path, line: str) -> None:
     path.write_text(line + "\n")
     with pytest.raises(config.ConfigError):
         config.load_config(path)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("/a", MountEntry(Path("/a"))),
+        ("/a:ro", MountEntry(Path("/a"), None, MountAccess.READ_ONLY)),
+        ("/a:rw", MountEntry(Path("/a"))),
+        ("/a:/b", MountEntry(Path("/a"), Path("/b"))),
+        ("/a:/b:ro", MountEntry(Path("/a"), Path("/b"), MountAccess.READ_ONLY)),
+    ],
+)
+def test_parse_mount(raw: str, expected: MountEntry) -> None:
+    assert config.parse_mount(raw, source="t") == expected
+
+
+def test_load_config_reads_env_assignments(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('extra_envs = ["A", "B=1", "C=${A}/x"]\n')
+    assert config.load_config(path).extra_envs == ("A", "B=1", "C=${A}/x")
 
 
 def test_example_file_loads_and_is_all_defaults() -> None:

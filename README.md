@@ -12,6 +12,7 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
   - [Web mode](#web-mode)
   - [Custom mounts](#custom-mounts)
   - [Workspaces](#workspaces)
+  - [Vertex AI](#vertex-ai)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom entrypoint](#custom-entrypoint)
 - [Configuration file](#configuration-file)
@@ -93,6 +94,7 @@ ai-container --claude --resume              # --resume isn't ours, forwarded aut
 ai-container --entrypoint /bin/bash -c 'echo hi'   # same for -c
 ai-container --claude -- --debug            # --debug *is* ours; -- forwards the literal flag instead
 ai-container --extra-env MY_VARIABLE              # forward a host environment variable when set
+ai-container --extra-env 'X=${HOME}/y'            # set a variable, expanding host variables
 ```
 
 This is a deliberate (and arguably improved) departure from the old bash script's parsing, which stopped recognizing its own flags entirely as soon as it saw the first argument it didn't understand. Since `ai-container` keeps recognizing its own flags anywhere on the command line, only genuine name collisions need `--`.
@@ -106,14 +108,12 @@ The launcher automatically:
 - Mounts the current directory at the same absolute path inside the container, so `pwd` matches on both sides. If it's under your host `$HOME`, it's remapped onto `/home/coder` instead (e.g. host `~/external/ai-container` → container `/home/coder/external/ai-container`), so `~`-relative paths line up too. Refuses to run if the current directory is your entire `$HOME`.
 - Detects if the current directory is a git worktree and automatically rw-mounts the parent checkout (the repo containing the real `.git` directory) at the equivalent container path. Disable with `--no-worktree-mount`.
 - Uses `/home/coder` as the container home.
-- Mounts configuration from the host home directory into `/home/coder`.
 - Runs as the image's `coder` user (podman: via `--userns=keep-id`; `container` and rootful docker: via `--uid`/`--gid` or `--user` matching the host user; rootless docker, detected with `docker info`: as container uid 0, which the daemon maps to your unprivileged host user so bind mounts stay writable).
 - Configures SELinux labels when needed (podman/Linux: `:z`/`:Z` mount labels; docker: `--security-opt label=disable`, so host files are never relabeled).
 - Forwards SSH agent for git operations unless disabled with `--no-ssh-agent` / `ssh_agent = false` (podman and docker: Linux only, by mounting the socket; Docker Desktop on macOS: via its `/run/host-services/ssh-auth.sock` relay; `container`: via its built-in `--ssh` forwarding, macOS only).
-- Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts), plus read-write tool configs such as osc, unless excluded with `--disable-mount` / `disable_mounts`.
-- Forwards `$BUGZILLA_API_KEY`, `$REDMINE_API_KEY`, `$PUSHOVER_USER`, and `$PUSHOVER_TOKEN` from the host environment when set (individually suppressible with `--disable-env` / `disable_envs`).
-- Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
-- Optionally mounts Google Cloud credentials when available, and forwards `$GCLOUD_PROJECT` from the host environment (as `GOOGLE_CLOUD_PROJECT`/`VERTEXAI_PROJECT`) when set.
+- Mounts `~/.ssh/known_hosts` read-only, and read-write `~/.claude`, `~/.claude.json`, `~/.config/opencode`, `~/.local/share/opencode`, `~/.local/state/opencode` and `~/.cache/opencode` (all skippable with `--disable-mount` / `disable_mounts`).
+- Sets up [Vertex AI](#vertex-ai) from three host variables.
+- Mounts and forwards nothing else by default: other credentials, tool configs, caches and environment variables come from the [configuration file](#configuration-file) (`extra_mounts`, `extra_envs`). Mounts only happen if the host path exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create directories such as `~/.local/share/opencode` on the host first if you want data like OpenCode session history to persist.
 - Assigns a random container name (e.g. `ai-x7q`) printed on every run.
 
 > [!NOTE]
@@ -145,19 +145,19 @@ Additional web options:
 
 ### Custom mounts
 
-Mount additional host directories into the container read-write, in addition to the current directory and any auto-detected git worktree parent:
+Bind-mount additional host directories or files into the container, in addition to the current directory and any auto-detected git worktree parent. The format is `SOURCE[:TARGET][:ro|rw]` (read-write by default):
 
 ```bash
 ai-container --extra-mount ~/repos/b
 ```
 
-`-m` is a shorthand for `--extra-mount`. Repeatable for multiple directories:
+`-m` is a shorthand for `--extra-mount`. Repeatable:
 
 ```bash
-ai-container -m ~/repos/b -m ~/repos/shared-libs
+ai-container -m ~/repos/b -m ~/repos/shared-libs:ro -m ~/notes:/opt/notes:ro
 ```
 
-Extra paths follow the same `$HOME`-remap rule as the workdir mount, and duplicate mount targets (e.g. one already covered by the auto-detected worktree parent) are skipped automatically.
+Without `TARGET`, paths follow the same `$HOME`-remap rule as the workdir mount; `TARGET` must be absolute. On a target clash the first mount wins (workdir, then CLI, config, workspace dirs, worktree parent, built-in defaults, `known_hosts`), so a clashing mount is skipped automatically.
 
 The old `--mount-extra` and `--env` spellings no longer exist; because unknown options are forwarded, they now reach the assistant as ordinary arguments.
 
@@ -170,6 +170,29 @@ ai-container --workspace frontend
 ```
 
 `--workspace` always looks the name up in the config file's `[[workspace]]` entries, regardless of `auto_workspaces`, and errors out if it isn't defined. With `auto_workspaces = true`, running `ai-container` from inside (or below) any of a workspace's `dirs` loads that workspace automatically, no flag needed. The active workspace's name is printed on startup on the same line as the container name (`podman container: ai-x7q (Workspace: frontend)`); it is omitted when no workspace is active.
+
+### Vertex AI
+
+Export three variables on the host, then launch either assistant:
+
+```bash
+gcloud auth application-default login
+export GCLOUD_PROJECT="your-project-id"
+export VERTEX_LOCATION="global"
+export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+ai-container --claude      # or --opencode
+```
+
+The launcher derives each tool's own variable names:
+
+| Purpose | Claude Code | OpenCode |
+|---|---|---|
+| Select Vertex | `CLAUDE_CODE_USE_VERTEX=1` (set when `VERTEX_LOCATION` is non-empty) | pick a Vertex model with `/models` |
+| Project | `ANTHROPIC_VERTEX_PROJECT_ID` (from `GCLOUD_PROJECT`) | `GOOGLE_CLOUD_PROJECT` (from `GCLOUD_PROJECT`) |
+| Location | `CLOUD_ML_REGION` (from `VERTEX_LOCATION`; Claude defaults to `us-east5` without it) | `VERTEX_LOCATION` |
+| Credentials | `GOOGLE_APPLICATION_CREDENTIALS` | `GOOGLE_APPLICATION_CREDENTIALS` |
+
+The file named by the host `GOOGLE_APPLICATION_CREDENTIALS` is mounted read-only at `/home/coder/.config/gcloud/application_default_credentials.json` and the in-container variable points there. Project entries are skipped when `GCLOUD_PROJECT` is unset or empty, the credentials entries when the file doesn't exist. Nothing is printed or passed in environment variables from the file's contents. The project needs the Vertex AI API enabled, `roles/aiplatform.user`, and access to the models in a location that supports them. Other ADC sources (e.g. an attached service account) can work without a credentials file. To use different projects or locations per tool, override an entry in `extra_envs`/`--extra-env` (e.g. `CLOUD_ML_REGION=us-east5`) or drop one with `disable_envs`/`--disable-env`; disabling the credentials mount via `disable_mounts` also drops its variable.
 
 ### Custom /etc/hosts entries
 
@@ -204,9 +227,9 @@ For per-host defaults that shouldn't need to be typed on every invocation (e.g. 
 
 ```toml
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
-extra_envs = ["MY_VARIABLE", "ANOTHER_VARIABLE"]
+extra_envs = ["MY_VARIABLE", "FIXED=value", "DERIVED=${MY_VARIABLE}"]
 disable_envs = ["PUSHOVER_TOKEN"]
-extra_mounts = ["~/src/shared"]
+extra_mounts = ["~/.claude", "~/.config/gh:ro", "~/src/shared"]
 disable_mounts = ["~/.aws", "~/.kube"]
 ssh_agent = true
 auto_workspaces = true
@@ -222,13 +245,13 @@ dirs = ["/home/user/repos/api"]
 
 `add_hosts` entries combine additively with any `--add-host` flags on the command line, de-duplicated. On the `container` engine, config-supplied `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an explicit `--add-host` on that engine is a hard error instead.
 
-`extra_envs` lists host environment variable names to forward when set, on top of the built-ins. Entries combine additively with repeatable `--extra-env NAME` flags and are de-duplicated; values remain in the host environment rather than the config file. `env` was renamed to `extra_envs`; the old key is an error.
+`extra_envs` lists the container's environment on top of the built-in [Vertex AI](#vertex-ai) variables; nothing else is set by default. `NAME` forwards the host value when set; `NAME=value` sets a literal, with `${HOST_VAR}` expanded from the host environment (no shell evaluation; the entry is skipped if a referenced variable is unset or empty). Entries combine with repeatable `--extra-env` flags; a flag entry with the same `NAME` replaces the config one. `env` was renamed to `extra_envs`; the old key is an error.
 
-`disable_envs` (or `--disable-env NAME`) stops a *built-in* forwarded variable (`ANTHROPIC_VERTEX_PROJECT_ID`, `BUGZILLA_API_KEY`, `REDMINE_API_KEY`, `PUSHOVER_USER`, `PUSHOVER_TOKEN`) from being forwarded. `extra_envs` / `--extra-env` win, so naming a variable in both forwards it. Launcher-set variables (`HOME`, `SSH_AUTH_SOCK`, the Vertex/GCLOUD ones) are not affected.
+`disable_envs` (or `--disable-env NAME`) drops the named variables, built-in Vertex ones included; `--extra-env` flags always win. A config entry with the same `NAME` replaces a built-in one. Launcher-set variables (`HOME`, `SSH_AUTH_SOCK`, web-mode credentials) are not affected.
 
-`extra_mounts` lists host directories to bind-mount read-write, merged with `--extra-mount`; relative paths resolve from the launch directory. Directories only.
+`extra_mounts` lists host directories or files to bind-mount as `SOURCE[:TARGET][:ro|rw]`, merged with `--extra-mount` and the built-in assistant mounts (config entries win on a target clash); `~` is expanded, relative sources resolve from the launch directory. Without `TARGET`, paths under `$HOME` map to the same path under `/home/coder`. See [`ai-container.toml.example`](ai-container.toml.example) for samples.
 
-`disable_mounts` (or `--disable-mount PATH`, repeatable) takes absolute host paths (`~` is expanded, `..` is rejected). Any built-in credential/cache mount, including Google Cloud credentials, whose host path equals or sits below an entry is skipped, so `~/.config` drops gh, glab, openQA, osc, tea, OpenCode config and gcloud at once (on macOS, glab's `~/Library/Application Support/glab-cli` is not under `~/.config` and stays mounted). Matching is lexical (no symlink resolution). Skipping gcloud also skips its generated `GOOGLE_*`/`VERTEX*` variables. Extra mounts, workspace dirs, the worktree parent and the working directory are never filtered, so `disable_mounts = ["~/.config"]` plus `extra_mounts = ["~/.config/gh"]` mounts only `gh` (read-write).
+`disable_mounts` (or `--disable-mount PATH`, repeatable) takes absolute host paths (`~` is expanded, `..` is rejected). Any config `extra_mounts` entry, and the built-in assistant, Vertex credentials and `known_hosts` mounts, whose host path equals or sits below an entry is skipped, so `~/.config` drops every mount under it. Matching is lexical (no symlink resolution). `--extra-mount` flags, workspace dirs, the worktree parent and the working directory are never filtered.
 
 `ssh_agent` (default `true`) controls SSH agent forwarding; `--ssh-agent` / `--no-ssh-agent` override it either way.
 
