@@ -34,7 +34,7 @@ def fake_engine_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Put stub `podman`/`container` executables on $PATH."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name in ("podman", "container"):
+    for name in ("podman", "container", "docker"):
         exe = bin_dir / name
         exe.write_text("#!/bin/sh\nexit 0\n")
         exe.chmod(exe.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)

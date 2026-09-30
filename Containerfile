@@ -42,7 +42,7 @@ RUN GOPROXY=direct go install github.com/github/github-mcp-server/cmd/github-mcp
 RUN GOPROXY=direct go install github.com/hashicorp/terraform-ls@latest
 # rust-analyzer has no distro/cargo/npm-installable release; grab the latest prebuilt binary.
 RUN mkdir -p /home/coder/.local/bin && \
-    curl -fsSL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz | gunzip -c > /home/coder/.local/bin/rust-analyzer && \
+    curl -fsSL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-$(uname -m)-unknown-linux-gnu.gz | gunzip -c > /home/coder/.local/bin/rust-analyzer && \
     chmod +x /home/coder/.local/bin/rust-analyzer
 # lemminx (XML LSP) isn't published standalone; extract its uber jar from the official VS Code extension.
 RUN mkdir -p /home/coder/.local/share/lemminx && \

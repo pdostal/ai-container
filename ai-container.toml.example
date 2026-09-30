@@ -7,7 +7,7 @@
 # Flag: --ssh-agent / --no-ssh-agent.
 # ssh_agent = false
 
-# Extra /etc/hosts entries as host:ip (podman only). Default: [].
+# Extra /etc/hosts entries as host:ip (podman and docker). Default: [].
 # Flag: --add-host.
 # add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
 

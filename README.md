@@ -1,6 +1,6 @@
 # AI Container
 
-Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Supports Claude Code and OpenCode, launched through a small `uv`-managed Python CLI that drives Podman (or Apple's `container` tool).
+Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Supports Claude Code and OpenCode, launched through a small `uv`-managed Python CLI that drives Podman, Docker, or Apple's `container` tool.
 
 ## Table of Contents
 
@@ -27,7 +27,9 @@ Containerized AI Coding Assistants environment based on openSUSE Tumbleweed. Sup
 sudo transactional-update pkg install crun crun-krun libkrun1 libkrunfw5 slirp4netns
 ```
 
-On macOS, you need either [Podman](https://podman.io) (running via `podman machine`) or Apple's native [`container`](https://github.com/apple/container) tool (Apple silicon, macOS 26+). For `container`, install it and start its services once:
+Alternatively, Docker (Engine, rootless Engine, or Docker Desktop) works with no extra packages.
+
+On macOS, you need [Podman](https://podman.io) (running via `podman machine`), [Docker Desktop](https://www.docker.com/products/docker-desktop/), or Apple's native [`container`](https://github.com/apple/container) tool (Apple silicon, macOS 26+). For `container`, install it and start its services once:
 
 ```bash
 container system start
@@ -42,7 +44,13 @@ The launcher itself is a Python CLI run through [`uv`](https://docs.astral.sh/uv
 podman build --pull=always --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
 ```
 
-Or with Apple's `container` tool:
+With Docker (the image tag `ai` is what the launcher runs):
+
+```bash
+docker build --pull --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
+```
+
+For rootless Docker the build-args don't matter (see [below](#what-the-launcher-does)). Or with Apple's `container` tool:
 
 ```bash
 container build --pull --build-arg CODER_UID="$(id -u)" --build-arg CODER_GID="$(id -g)" -t ai -f Containerfile .
@@ -93,15 +101,15 @@ Run `ai-container --help` for the full, coloured option reference.
 
 The launcher automatically:
 
-- Picks a container runtime: `podman` by default, falling back to Apple's `container` on macOS if `podman` isn't installed. Override with `--runtime podman|container` or the `AI_CONTAINER_RUNTIME` environment variable.
+- Picks a container runtime: `podman` by default, then Apple's `container` on macOS, then `docker`. Override with `--runtime podman|container|docker` or the `AI_CONTAINER_RUNTIME` environment variable.
 - Optionally runs the container inside a KVM microVM instead of plain namespaces, via crun's `krun` OCI runtime. Enable with `--microvm` (podman only; needs the `crun-krun` package and `/dev/kvm` access).
 - Mounts the current directory at the same absolute path inside the container, so `pwd` matches on both sides. If it's under your host `$HOME`, it's remapped onto `/home/coder` instead (e.g. host `~/external/ai-container` → container `/home/coder/external/ai-container`), so `~`-relative paths line up too. Refuses to run if the current directory is your entire `$HOME`.
 - Detects if the current directory is a git worktree and automatically rw-mounts the parent checkout (the repo containing the real `.git` directory) at the equivalent container path. Disable with `--no-worktree-mount`.
 - Uses `/home/coder` as the container home.
 - Mounts configuration from the host home directory into `/home/coder`.
-- Runs as the image's `coder` user (podman: via `--userns=keep-id`; `container`: via `--uid`/`--gid` matching the host user, since its bind mounts show files owned by whichever uid/gid the process runs as).
-- Configures SELinux labels when needed (podman/Linux only).
-- Forwards SSH agent for git operations unless disabled with `--no-ssh-agent` / `ssh_agent = false` (podman: Linux only; `container`: via its built-in `--ssh` forwarding, macOS only).
+- Runs as the image's `coder` user (podman: via `--userns=keep-id`; `container` and rootful docker: via `--uid`/`--gid` or `--user` matching the host user; rootless docker, detected with `docker info`: as container uid 0, which the daemon maps to your unprivileged host user so bind mounts stay writable).
+- Configures SELinux labels when needed (podman/Linux: `:z`/`:Z` mount labels; docker: `--security-opt label=disable`, so host files are never relabeled).
+- Forwards SSH agent for git operations unless disabled with `--no-ssh-agent` / `ssh_agent = false` (podman and docker: Linux only, by mounting the socket; Docker Desktop on macOS: via its `/run/host-services/ssh-auth.sock` relay; `container`: via its built-in `--ssh` forwarding, macOS only).
 - Mounts credentials read-only (GitHub CLI, Git config, SSH known_hosts), plus read-write tool configs such as osc, unless excluded with `--disable-mount` / `disable_mounts`.
 - Forwards `$BUGZILLA_API_KEY`, `$REDMINE_API_KEY`, `$PUSHOVER_USER`, and `$PUSHOVER_TOKEN` from the host environment when set (individually suppressible with `--disable-env` / `disable_envs`).
 - Mounts AI assistant configurations for persistence (Claude Code; OpenCode config, data, and state). These rw mounts only happen if the host directory already exists (a `✗ ... not found` line is printed with `--debug` otherwise); the container runs with `--rm`, so create the directory on the host first (e.g. `mkdir -p ~/.local/share/opencode`) if you want data such as OpenCode session history (needed for `opencode -s <session-id>`) to persist across runs.
@@ -165,7 +173,7 @@ ai-container --workspace frontend
 
 ### Custom /etc/hosts entries
 
-Add static `/etc/hosts` entries inside the container, podman only (Apple's `container` tool has no equivalent flag):
+Add static `/etc/hosts` entries inside the container, podman and docker (Apple's `container` tool has no equivalent flag):
 
 ```bash
 ai-container --add-host openqa-ai.qam.suse.cz:169.254.1.2
@@ -228,7 +236,7 @@ dirs = ["/home/user/repos/api"]
 
 ## What the launcher does
 
-`ai-container` is a Python CLI (source under [`src/ai_container/`](src/ai_container/)) that assembles a single `podman run` / `container run` invocation: it never talks to a daemon API directly, so `podman`/`container` debug output (via `--debug-podman`, separate from the launcher's own `--debug`) reflects exactly what would happen if you ran the printed command yourself. Docker isn't supported yet, but the engine-selection code is structured to make adding it later straightforward.
+`ai-container` is a Python CLI (source under [`src/ai_container/`](src/ai_container/)) that assembles a single `podman run` / `docker run` / `container run` invocation: it never talks to a daemon API directly (the only probe is `docker info`, to detect rootless mode), so engine debug output (via `--debug-podman`, separate from the launcher's own `--debug`) reflects exactly what would happen if you ran the printed command yourself.
 
 ## Network Configuration
 
@@ -248,7 +256,9 @@ sudo firewall-cmd --reload
 
 `dummy0` (`172.29.0.1/24`) sits in the `trusted` zone. The `block-pub-dummy` policy rejects any traffic from the `public` zone into `trusted`, so the `dummy0` interface stays reachable from the container (via pasta) but not from the network. Bind MCP servers to `172.29.0.1:<port>` on the host and point the container's MCP client config at that address.
 
-This `pasta`/`dummy0` setup is podman/Linux-specific and doesn't apply when running with Apple's `container` tool. To reach a host-bound MCP server from a container on `container`, use its own domain-based mechanism instead (see [Host integration](https://github.com/apple/container/blob/main/docs/host-integration.md) in the `container` docs):
+This `pasta`/`dummy0` setup is podman/Linux-specific and doesn't apply when running with Docker or Apple's `container` tool. With Docker, containers use the default bridge network; reach host services via `host.docker.internal` on Docker Desktop, or `--add-host host.docker.internal:host-gateway` on Linux Engine.
+
+On Apple's `container` tool, use its own domain-based mechanism instead (see [Host integration](https://github.com/apple/container/blob/main/docs/host-integration.md) in the `container` docs):
 
 ```bash
 sudo container system dns create host.container.internal --localhost <ipv4-address>

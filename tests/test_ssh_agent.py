@@ -81,6 +81,38 @@ def test_container_engine_uses_ssh_flag(monkeypatch: pytest.MonkeyPatch, real_so
     assert result.needs_relay_chmod is True
 
 
+def test_docker_linux_mounts_host_socket_without_selinux_suffix(
+    monkeypatch: pytest.MonkeyPatch, real_socket: Path
+) -> None:
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(real_socket))
+    result = ssh_agent.configure(
+        engine=Engine.DOCKER,
+        container_home=CONTAINER_HOME,
+        selinux_enabled=False,
+        reporter=Reporter(),
+    )
+    target = CONTAINER_HOME / ".ssh/agent/ssh-agent.sock"
+    assert result.args == [f"--mount=type=bind,source={real_socket},target={target}"]
+    assert result.env == {"SSH_AUTH_SOCK": str(target)}
+
+
+def test_docker_desktop_macos_uses_host_services_relay(
+    monkeypatch: pytest.MonkeyPatch, real_socket: Path
+) -> None:
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(real_socket))
+    result = ssh_agent.configure(
+        engine=Engine.DOCKER,
+        container_home=CONTAINER_HOME,
+        selinux_enabled=False,
+        reporter=Reporter(),
+        host_platform="Darwin",
+    )
+    relay = "/run/host-services/ssh-auth.sock"
+    assert result.args == [f"--mount=type=bind,source={relay},target={relay}"]
+    assert result.env == {"SSH_AUTH_SOCK": relay}
+    assert result.needs_relay_chmod is False
+
+
 def test_container_engine_without_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
     result = ssh_agent.configure(

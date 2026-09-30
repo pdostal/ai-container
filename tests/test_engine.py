@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from pytest_subprocess import FakeProcess
 
 from ai_container import engine
 from ai_container.models import Engine
@@ -22,7 +23,7 @@ def test_env_runtime_used_when_no_explicit(fake_engine_path) -> None:  # type: i
 
 def test_unknown_runtime_raises() -> None:
     with pytest.raises(engine.UnknownEngineError):
-        engine.resolve_engine(explicit="docker", env_runtime=None, host_platform="Linux")
+        engine.resolve_engine(explicit="nonsense", env_runtime=None, host_platform="Linux")
 
 
 def test_autodetects_podman_when_present(fake_engine_path) -> None:  # type: ignore[no-untyped-def]
@@ -59,7 +60,7 @@ def test_ensure_available_ok_when_present(fake_engine_path) -> None:  # type: ig
 
 @pytest.mark.parametrize(
     ("selected", "expected_image"),
-    [(Engine.PODMAN, "localhost/ai"), (Engine.CONTAINER, "ai")],
+    [(Engine.PODMAN, "localhost/ai"), (Engine.CONTAINER, "ai"), (Engine.DOCKER, "ai")],
 )
 def test_image_name(selected: Engine, expected_image: str) -> None:
     assert engine.image_name(selected) == expected_image
@@ -106,3 +107,74 @@ def test_oci_runtime_args_podman_microvm() -> None:
 )
 def test_oci_runtime_args_empty_otherwise(selected: Engine, microvm: bool) -> None:
     assert engine.oci_runtime_args(selected, microvm=microvm) == []
+
+
+def test_explicit_docker_runtime(fake_engine_path) -> None:  # type: ignore[no-untyped-def]
+    result = engine.resolve_engine(explicit="docker", env_runtime=None, host_platform="Linux")
+    assert result is Engine.DOCKER
+
+
+def _only_on_path(tmp_path, monkeypatch, *names: str) -> None:  # type: ignore[no-untyped-def]
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in names:
+        exe = bin_dir / name
+        exe.write_text("#!/bin/sh\nexit 0\n")
+        exe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+
+@pytest.mark.parametrize("host_platform", ["Linux", "Darwin"])
+def test_autodetects_docker_last(tmp_path, monkeypatch, host_platform: str) -> None:  # type: ignore[no-untyped-def]
+    _only_on_path(tmp_path, monkeypatch, "docker")
+    result = engine.resolve_engine(explicit=None, env_runtime=None, host_platform=host_platform)
+    assert result is Engine.DOCKER
+
+
+def test_container_beats_docker_on_macos(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _only_on_path(tmp_path, monkeypatch, "docker", "container")
+    result = engine.resolve_engine(explicit=None, env_runtime=None, host_platform="Darwin")
+    assert result is Engine.CONTAINER
+
+
+def test_identity_args_docker_rootful(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(os, "getuid", lambda: 1234)
+    monkeypatch.setattr(os, "getgid", lambda: 5678)
+    assert engine.identity_args(Engine.DOCKER) == [
+        "-h",
+        "ai",
+        "--security-opt",
+        "label=disable",
+        "--user",
+        "1234:5678",
+    ]
+
+
+def test_identity_args_docker_rootless_runs_as_mapped_root() -> None:
+    assert engine.identity_args(Engine.DOCKER, docker_rootless=True)[-2:] == ["--user", "0:0"]
+
+
+def test_docker_engine_has_no_podman_only_args() -> None:
+    assert engine.network_args(Engine.DOCKER) == []
+    assert engine.oci_runtime_args(Engine.DOCKER, microvm=True) == []
+    assert engine.tty_args(Engine.DOCKER) == ["-it"]
+    assert engine.debug_args(Engine.DOCKER) == ["--debug"]
+
+
+_INFO = ["docker", "info", "--format", "{{json .SecurityOptions}}"]
+
+
+def test_docker_is_rootless_true(fp: FakeProcess) -> None:
+    fp.register(_INFO, stdout='["name=seccomp,profile=builtin","name=rootless"]')
+    assert engine.docker_is_rootless() is True
+
+
+def test_docker_is_rootless_false(fp: FakeProcess) -> None:
+    fp.register(_INFO, stdout='["name=seccomp,profile=builtin","name=cgroupns"]')
+    assert engine.docker_is_rootless() is False
+
+
+def test_docker_is_rootless_daemon_error(fp: FakeProcess) -> None:
+    fp.register(_INFO, returncode=1, stderr="Cannot connect to the Docker daemon")
+    with pytest.raises(engine.EngineProbeError, match="Cannot connect"):
+        engine.docker_is_rootless()

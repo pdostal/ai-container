@@ -8,15 +8,11 @@ from pathlib import Path
 
 
 class Engine(StrEnum):
-    """Supported container engines.
-
-    Docker isn't implemented yet, but the codebase (see ``engine.py``) is
-    structured so adding it later means adding one more branch, not a
-    rewrite.
-    """
+    """Supported container engines (see ``engine.py`` for per-engine differences)."""
 
     PODMAN = "podman"
     CONTAINER = "container"
+    DOCKER = "docker"
 
 
 class MountKind(Enum):

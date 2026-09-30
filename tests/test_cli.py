@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import socket
 import tempfile
 from collections.abc import Iterator
@@ -8,8 +9,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_container import __version__, git_utils
+from ai_container import __version__, git_utils, selinux
 from ai_container import cli as cli_mod
+from ai_container import engine as engine_ops
 
 runner = CliRunner()
 
@@ -49,7 +51,7 @@ def test_version_prints_and_exits_before_any_engine_work(flag: str) -> None:
 
 
 def test_unknown_runtime_errors(isolated_home: Path, workdir: Path, fake_engine_path: Path) -> None:
-    result = runner.invoke(cli_mod.app, ["--runtime", "docker"])
+    result = runner.invoke(cli_mod.app, ["--runtime", "nonsense"])
     assert result.exit_code == 1
     assert "Unknown --runtime" in result.output
 
@@ -104,6 +106,80 @@ def test_microvm_adds_krun_runtime_and_passt_annotation(
     assert argv[argv.index("--runtime") + 1] == "krun"
     assert "--annotation" in argv
     assert argv[argv.index("--annotation") + 1] == "krun.use_passt=1"
+
+
+def _stub_rootless(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:
+    monkeypatch.setattr(engine_ops, "docker_is_rootless", lambda: value)
+
+
+def test_docker_rootful_argv(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_rootless(monkeypatch, False)
+    result = runner.invoke(cli_mod.app, ["--runtime", "docker", "--add-host", "a.example:1.2.3.4"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[0] == "docker"
+    assert argv[argv.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
+    assert "--add-host=a.example:1.2.3.4" in argv
+    assert "--network=pasta" not in argv
+    assert "ai" in argv
+    assert not any(arg.endswith(",z") or arg.endswith(":z") for arg in argv)
+
+
+def test_docker_rootless_runs_as_mapped_root(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_rootless(monkeypatch, True)
+    result = runner.invoke(cli_mod.app, ["--runtime", "docker"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--user") + 1] == "0:0"
+
+
+def test_docker_selinux_uses_label_disable_not_mount_suffix(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_rootless(monkeypatch, False)
+    monkeypatch.setattr(selinux, "detect", lambda **_: selinux.SELinuxStatus(enabled=True))
+    result = runner.invoke(cli_mod.app, ["--runtime", "docker"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "label=disable" in argv
+    assert not any(",z" in arg or ":z" in arg.lower() for arg in argv)
+
+
+def test_docker_daemon_probe_failure_errors(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom() -> bool:
+        raise engine_ops.EngineProbeError("Cannot connect")
+
+    monkeypatch.setattr(engine_ops, "docker_is_rootless", boom)
+    result = runner.invoke(cli_mod.app, ["--runtime", "docker"])
+    assert result.exit_code == 1
+    assert "Could not query the docker daemon: Cannot connect" in result.output
+
+
+def test_microvm_rejected_on_docker_engine(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_rootless(monkeypatch, False)
+    result = runner.invoke(cli_mod.app, ["--runtime", "docker", "--microvm"])
+    assert result.exit_code == 1
+    assert "--microvm is only supported with the podman engine" in result.output
 
 
 def test_microvm_rejected_on_container_engine(

@@ -33,6 +33,7 @@ def configure(
     container_home: Path,
     selinux_enabled: bool,
     reporter: Reporter,
+    host_platform: str = "Linux",
 ) -> SshForwarding:
     sock = _socket_available()
 
@@ -46,12 +47,18 @@ def configure(
         return SshForwarding(args=[], env={}, needs_relay_chmod=False)
 
     if sock:
-        target = container_home / ".ssh/agent/ssh-agent.sock"
-        reporter.debug_ok(f"Mounting SSH agent socket (bind-mount, rw): {sock}")
+        source, target = sock, container_home / ".ssh/agent/ssh-agent.sock"
+        if engine is Engine.DOCKER and host_platform == "Darwin":
+            # Docker Desktop can't mount the host socket; it offers a relay at this path.
+            source, target = (
+                "/run/host-services/ssh-auth.sock",
+                Path("/run/host-services/ssh-auth.sock"),
+            )
+        reporter.debug_ok(f"Mounting SSH agent socket (bind-mount, rw): {source}")
         reporter.debug_detail(f"Setting SSH_AUTH_SOCK={target}")
         suffix = selinux.bind_suffix(selinux_enabled)
         return SshForwarding(
-            args=[f"--mount=type=bind,source={sock},target={target}{suffix}"],
+            args=[f"--mount=type=bind,source={source},target={target}{suffix}"],
             env={"SSH_AUTH_SOCK": str(target)},
             needs_relay_chmod=False,
         )

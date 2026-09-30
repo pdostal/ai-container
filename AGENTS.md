@@ -76,5 +76,5 @@ Consequence for future changes: every new flag (especially short ones) added to 
 
 ## Non-goals / known constraints
 
-- Docker isn't implemented (`models.Engine` only has `PODMAN`/`CONTAINER`). The code is structured so adding it means adding one enum member plus one branch per function in `engine.py`, not a rewrite.
+- Docker rootless runs the container as uid 0 (daemon maps it to the host user); docker SELinux uses `label=disable` rather than `:z`/`:Z` (its `--mount` has no z option). Docker Desktop on Linux and Docker on Windows are untested.
 - The bash-era quirk where read-only `-v` mounts get the private `:Z` SELinux label while read-write `-v` mounts and all `--mount=type=bind` mounts get the shared `:z` label is preserved intentionally (see `selinux.py` docstring) — it was ported faithfully, not redesigned.

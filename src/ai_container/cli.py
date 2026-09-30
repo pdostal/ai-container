@@ -152,7 +152,7 @@ def main(
         list[str] | None,
         typer.Option(
             "--add-host",
-            help="Extra /etc/hosts entry as host:ip. Repeatable. Podman only.",
+            help="Extra /etc/hosts entry as host:ip. Repeatable. Not supported by `container`.",
         ),
     ] = None,
     env: Annotated[
@@ -183,7 +183,8 @@ def main(
     debug_podman: Annotated[
         bool,
         typer.Option(
-            "--debug-podman", help="Verbose podman/container engine debug output (very noisy)."
+            "--debug-podman",
+            help="Verbose podman/container/docker engine debug output (very noisy).",
         ),
     ] = False,
     microvm: Annotated[
@@ -198,7 +199,7 @@ def main(
         str | None,
         typer.Option(
             "--runtime",
-            help="Container engine: podman or container. Defaults to "
+            help="Container engine: podman, container or docker. Defaults to "
             "$AI_CONTAINER_RUNTIME, then autodetection.",
             show_default=False,
         ),
@@ -246,10 +247,12 @@ def main(
             host_platform=host_platform,
         )
         engine_ops.ensure_available(selected_engine)
-        if microvm and selected_engine is Engine.CONTAINER:
+        docker_rootless = selected_engine is Engine.DOCKER and engine_ops.docker_is_rootless()
+        if microvm and selected_engine is not Engine.PODMAN:
             raise CliError(
                 "--microvm is only supported with the podman engine "
-                "(Apple's container tool already runs each container in its own VM)."
+                "(Apple's container tool already runs each container in its own VM; "
+                "docker has no krun runtime)."
             )
         launcher_config = config.load_config(config.config_path(host_home))
         disabled_mounts = tuple(
@@ -287,8 +290,11 @@ def main(
     except engine_ops.UnknownEngineError as exc:
         reporter.fail(
             f"Unknown --runtime/AI_CONTAINER_RUNTIME value: {exc} "
-            "(expected 'podman' or 'container')"
+            "(expected 'podman', 'container' or 'docker')"
         )
+        raise typer.Exit(1) from exc
+    except engine_ops.EngineProbeError as exc:
+        reporter.fail(f"Could not query the docker daemon: {exc}")
         raise typer.Exit(1) from exc
     except engine_ops.EngineNotFoundError as exc:
         reporter.fail(f"Selected runtime '{exc}' not found on $PATH")
@@ -309,6 +315,8 @@ def main(
 
     image = engine_ops.image_name(selected_engine)
     selinux_status = selinux.detect(host_platform=host_platform, reporter=reporter)
+    # docker gets label=disable (see identity_args); its --mount has no z option.
+    selinux_enabled = selinux_status.enabled and selected_engine is not Engine.DOCKER
     container_name = random_container_name()
 
     extra_mount_paths = [*launcher_config.extra_mounts, *cli_extra_mounts]
@@ -330,9 +338,9 @@ def main(
         "-w",
         str(target_workdir),
         f"--mount=type=bind,source={cwd},target={target_workdir}"
-        f"{selinux.bind_suffix(selinux_status.enabled)}",
+        f"{selinux.bind_suffix(selinux_enabled)}",
     ]
-    args.extend(engine_ops.identity_args(selected_engine))
+    args.extend(engine_ops.identity_args(selected_engine, docker_rootless=docker_rootless))
     reporter.debug_ok(f"Mounting working directory (bind-mount, rw): {cwd} \u2192 {target_workdir}")
 
     mounted_targets: set[Path] = {target_workdir}
@@ -341,13 +349,13 @@ def main(
         extra_mount_paths,
         mounted_targets=mounted_targets,
         host_home=host_home,
-        selinux_enabled=selinux_status.enabled,
+        selinux_enabled=selinux_enabled,
         reporter=reporter,
     )
     _apply_gcloud(
         args,
         host_home=host_home,
-        selinux_enabled=selinux_status.enabled,
+        selinux_enabled=selinux_enabled,
         disabled_mounts=disabled_mounts,
         reporter=reporter,
     )
@@ -359,9 +367,7 @@ def main(
         if mounts.is_disabled(spec, disabled_mounts):
             reporter.debug_fail(f"{spec.label} disabled: {spec.host}")
             continue
-        applied = mounts.apply_mount(
-            args, spec, selinux_enabled=selinux_status.enabled, reporter=reporter
-        )
+        applied = mounts.apply_mount(args, spec, selinux_enabled=selinux_enabled, reporter=reporter)
         if applied:
             mounted_targets.add(spec.container)
 
@@ -372,7 +378,8 @@ def main(
         forwarding = ssh_agent.configure(
             engine=selected_engine,
             container_home=CONTAINER_HOME,
-            selinux_enabled=selinux_status.enabled,
+            host_platform=host_platform,
+            selinux_enabled=selinux_enabled,
             reporter=reporter,
         )
     else:
