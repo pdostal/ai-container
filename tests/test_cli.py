@@ -767,6 +767,37 @@ def test_web_mode_sets_detach_and_port(
     assert "--hostname" in argv
 
 
+def test_web_mode_uses_config_and_masks_password(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(
+        isolated_home, 'web_port = 6000\nweb_username = "bob"\nweb_password = "s3cretpw"\n'
+    )
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--web"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "6000:6000" in argv
+    assert "OPENCODE_SERVER_USERNAME=bob" in argv
+    assert "OPENCODE_SERVER_PASSWORD=s3cretpw" in argv
+    assert "*****" in result.output
+    assert "s3cretpw" not in result.output
+
+
+def test_web_flags_override_config(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'web_port = 6000\nweb_username = "bob"\nweb_password = "cfgpw"\n')
+    args = ["--runtime", "podman", "--web", "--web-port", "7000", "--web-username", "al"]
+    result = runner.invoke(cli_mod.app, [*args, "--web-password", "clipw"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "7000:7000" in argv
+    assert "OPENCODE_SERVER_USERNAME=al" in argv
+    assert "OPENCODE_SERVER_PASSWORD=clipw" in argv
+    assert "clipw" in result.output
+    assert "cfgpw" not in result.output
+
+
 def test_debug_flag_prepends_opencode_debug_args(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

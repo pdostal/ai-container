@@ -36,6 +36,9 @@ class LauncherConfig:
     ssh_agent: bool = True
     workspaces: tuple[Workspace, ...] = ()
     auto_workspaces: bool = False
+    web_port: int | None = None
+    web_username: str | None = None
+    web_password: str | None = None
 
 
 def config_path(host_home: Path) -> Path:
@@ -84,6 +87,13 @@ def _str_list(path: Path, data: dict[str, object], key: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
+def _opt_str(path: Path, data: dict[str, object], key: str) -> str | None:
+    raw = data.get(key)
+    if raw is not None and (not isinstance(raw, str) or not raw):
+        raise ConfigError(f"{path}: {key!r} must be a non-empty string")
+    return raw
+
+
 def load_config(path: Path) -> LauncherConfig:
     """Load ``path``, tolerating a missing file the way MountSpec.exists() does."""
     if not path.is_file():
@@ -124,6 +134,14 @@ def load_config(path: Path) -> LauncherConfig:
         raise ConfigError(f"{path}: 'workspace' must be an array of tables")
     workspaces = tuple(_parse_workspace(path, entry) for entry in raw_workspaces)
 
+    web_port = data.get("web_port")
+    if web_port is not None and (
+        isinstance(web_port, bool) or not isinstance(web_port, int) or not 1 <= web_port <= 65535
+    ):
+        raise ConfigError(f"{path}: 'web_port' must be an integer between 1 and 65535")
+    web_username = _opt_str(path, data, "web_username")
+    web_password = _opt_str(path, data, "web_password")
+
     return LauncherConfig(
         add_hosts=_str_list(path, data, "add_hosts"),
         extra_envs=extra_envs,
@@ -133,6 +151,9 @@ def load_config(path: Path) -> LauncherConfig:
         ssh_agent=ssh_agent,
         workspaces=workspaces,
         auto_workspaces=raw_auto_workspaces,
+        web_port=web_port,
+        web_username=web_username,
+        web_password=web_password,
     )
 
 

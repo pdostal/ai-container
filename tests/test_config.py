@@ -213,3 +213,23 @@ def test_example_file_samples_parse_when_uncommented(tmp_path: Path) -> None:
     result = config.load_config(path)
     assert result.ssh_agent is False
     assert result.disable_mounts and result.extra_mounts and result.workspaces
+
+
+def test_load_config_web_keys(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text('web_port = 5000\nweb_username = "u"\nweb_password = "p"\n')
+    result = config.load_config(path)
+    assert (result.web_port, result.web_username, result.web_password) == (5000, "u", "p")
+    assert config.load_config(tmp_path / "missing.toml").web_port is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    ['web_port = "80"', "web_port = true", "web_port = 0", "web_port = 70000",
+     "web_username = 1", 'web_username = ""', 'web_password = ""', "web_password = false"],
+)  # fmt: skip
+def test_load_config_rejects_bad_web_keys(tmp_path: Path, line: str) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text(line + "\n")
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)

@@ -35,6 +35,13 @@
 # Default: false.
 # auto_workspaces = true
 
+# Defaults for --web. Flags: --web-port, --web-username, --web-password (flags win).
+# web_port = 4996
+# web_username = "coder"
+# Stored in plaintext, so chmod 600 this file. Not echoed at startup (shown as *****).
+# Default: random, printed at startup.
+# web_password = "change-me"
+
 # Named directory groups mounted together with --workspace NAME. Default: none.
 # [[workspace]]
 # Workspace name, passed to --workspace.

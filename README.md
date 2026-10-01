@@ -139,9 +139,11 @@ Additional web options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--web-port PORT` | `4996` | Port to expose the web interface on |
-| `--web-username USER` | `coder` | HTTP basic auth username |
-| `--web-password PASS` | *(random)* | HTTP basic auth password |
+| `--web-port PORT` | `4996` | Port to expose the web interface on (config: `web_port`) |
+| `--web-username USER` | `coder` | HTTP basic auth username (config: `web_username`) |
+| `--web-password PASS` | *(random)* | HTTP basic auth password (config: `web_password`) |
+
+The flags override the config keys. A password from the config file is printed as `*****` at startup.
 
 ### Custom mounts
 
@@ -233,6 +235,9 @@ extra_mounts = ["~/.claude", "~/.config/gh:ro", "~/src/shared"]
 disable_mounts = ["~/.aws", "~/.kube"]
 ssh_agent = true
 auto_workspaces = true
+web_port = 4996
+web_username = "coder"
+web_password = "change-me"
 
 [[workspace]]
 name = "frontend"
@@ -256,6 +261,8 @@ dirs = ["/home/user/repos/api"]
 `ssh_agent` (default `true`) controls SSH agent forwarding; `--ssh-agent` / `--no-ssh-agent` override it either way.
 
 `[[workspace]]` entries each define a `name` and a list of `dirs` to mount together; see [Workspaces](#workspaces) above. `auto_workspaces` (default `false`) controls whether being inside one of those `dirs` loads its workspace without an explicit `--workspace` flag.
+
+`web_port`, `web_username` and `web_password` set the [web mode](#web-mode) defaults (flags win). The password is stored in plaintext (`chmod 600` the file) and masked as `*****` at startup when it comes from here.
 
 ## What the launcher does
 

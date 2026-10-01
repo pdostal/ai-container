@@ -110,15 +110,27 @@ def main(
     web_mode: Annotated[
         bool, typer.Option("--web", help="Run OpenCode as a background web server.")
     ] = False,
-    web_port: Annotated[int, typer.Option("--web-port", help="Port for --web.")] = 4996,
+    web_port: Annotated[
+        int | None,
+        typer.Option(
+            "--web-port",
+            help="Port for --web (config: web_port; default 4996).",
+            show_default=False,
+        ),
+    ] = None,
     web_username: Annotated[
-        str, typer.Option("--web-username", help="HTTP basic auth username for --web.")
-    ] = "coder",
+        str | None,
+        typer.Option(
+            "--web-username",
+            help="HTTP basic auth username for --web (config: web_username; default coder).",
+            show_default=False,
+        ),
+    ] = None,
     web_password: Annotated[
         str | None,
         typer.Option(
             "--web-password",
-            help="HTTP basic auth password for --web (random if unset).",
+            help="HTTP basic auth password for --web (config: web_password; random if unset).",
             show_default=False,
         ),
     ] = None,
@@ -412,12 +424,13 @@ def main(
 
     if web_mode:
         web_config = web.configure(
-            port=web_port,
-            username=web_username,
-            password=web_password,
+            port=web_port or launcher_config.web_port or web.DEFAULT_PORT,
+            username=web_username or launcher_config.web_username or web.DEFAULT_USERNAME,
+            password=web_password or launcher_config.web_password,
             tool_args=tool_args,
             host_platform=host_platform,
             reporter=reporter,
+            mask_password=not web_password and launcher_config.web_password is not None,
         )
         args.extend(web_config.args)
         tool_args = web_config.tool_args

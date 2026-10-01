@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from .console import Reporter
 from .naming import random_web_password
 
+DEFAULT_PORT = 4996
+DEFAULT_USERNAME = "coder"
+
 
 @dataclass(frozen=True, slots=True)
 class WebConfig:
@@ -56,6 +59,7 @@ def configure(
     tool_args: list[str],
     host_platform: str,
     reporter: Reporter,
+    mask_password: bool = False,
 ) -> WebConfig:
     resolved_password = password or random_web_password()
     args = [
@@ -72,6 +76,6 @@ def configure(
     host_ip = _host_ip(host_platform)
     reporter.ok(f"Web mode: http://{host_ip}:{port}")
     reporter.ok(f"Web username: {username}")
-    reporter.ok(f"Web password: {resolved_password}")
+    reporter.ok(f"Web password: {'*****' if mask_password else resolved_password}")
 
     return WebConfig(args=args, tool_args=new_tool_args, password=resolved_password)
