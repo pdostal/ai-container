@@ -16,7 +16,9 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN gem install ruby-lsp
-RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope \
+RUN npm config set allow-scripts=protobufjs,core-js --location=user
+RUN npm install -g npm@latest
+RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope opencode-ai \
     pyright typescript typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
@@ -50,7 +52,7 @@ RUN mkdir -p /home/coder/.local/share/lemminx && \
     unzip -p /tmp/vscode-xml.vsix extension/server/org.eclipse.lemminx-uber.jar > /home/coder/.local/share/lemminx/lemminx.jar && \
     rm -f /tmp/vscode-xml.vsix
 RUN curl -fsSL https://claude.ai/install.sh | bash
-RUN curl -fsSL https://opencode.ai/install | bash
+#RUN curl -fsSL https://opencode.ai/install | bash
 RUN npx --yes skills add plusky/openQA-skill --skill openqa -g -a opencode -y
 RUN curl -fsSL https://raw.githubusercontent.com/anthonystepvoy/caveman-opencode/main/install-opencode.sh | sh
 RUN rtk init -g
