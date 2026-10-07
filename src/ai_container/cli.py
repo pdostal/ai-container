@@ -446,7 +446,6 @@ def main(
         reporter.step(f"Using entrypoint: {resolved_entrypoint}")
     if tool_args:
         reporter.step(f"Passing params: {' '.join(tool_args)}")
-    reporter.blank()
 
     if forwarding.needs_relay_chmod:
         spawn_relay_chmod_fix(selected_engine, container_name)

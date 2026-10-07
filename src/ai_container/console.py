@@ -39,9 +39,6 @@ class Reporter:
     def detail(self, message: str) -> None:
         self.console.print(f"  [dim]\u2192[/dim] {message}")
 
-    def blank(self) -> None:
-        self.console.print()
-
     def debug_ok(self, message: str) -> None:
         if self.debug:
             self.ok(message)
