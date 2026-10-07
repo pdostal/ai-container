@@ -16,7 +16,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN gem install ruby-lsp
-RUN npm config set allow-scripts=protobufjs,core-js --location=user
+RUN npm config set allow-scripts=protobufjs,core-js,opencode-ai,msgpackr-extract --location=user
 RUN npm install -g npm@latest
 RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope opencode-ai \
     pyright typescript typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted

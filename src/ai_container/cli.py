@@ -66,7 +66,7 @@ app = typer.Typer(
 
 CONTAINER_HOME = Path("/home/coder")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-DEFAULT_OPENCODE_ENTRYPOINT = str(CONTAINER_HOME / ".opencode/bin/opencode")
+DEFAULT_OPENCODE_ENTRYPOINT = "/usr/bin/opencode"
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
 
 
@@ -442,7 +442,8 @@ def main(
         reporter=reporter,
         workspace=active_workspace.name if active_workspace else None,
     )
-    reporter.step(f"Using entrypoint: {resolved_entrypoint}")
+    if debug or resolved_entrypoint not in (DEFAULT_OPENCODE_ENTRYPOINT, DEFAULT_CLAUDE_ENTRYPOINT):
+        reporter.step(f"Using entrypoint: {resolved_entrypoint}")
     if tool_args:
         reporter.step(f"Passing params: {' '.join(tool_args)}")
     reporter.blank()

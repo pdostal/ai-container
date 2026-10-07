@@ -422,7 +422,7 @@ def test_default_entrypoint_is_opencode(
 ) -> None:
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert "/home/coder/.opencode/bin/opencode" in argv
+    assert "/usr/bin/opencode" in argv
 
 
 def test_claude_flag_switches_entrypoint(
