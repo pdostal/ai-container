@@ -46,7 +46,7 @@ from . import workspace as workspace_ops
 from .console import Reporter
 from .models import Engine, MountAccess, MountEntry, MountKind, MountSpec
 from .naming import random_container_name
-from .runner import build_argv, run, spawn_relay_chmod_fix
+from .runner import build_argv, build_exec_argv, run, spawn_relay_chmod_fix
 
 rich_patches.apply()
 
@@ -66,6 +66,7 @@ app = typer.Typer(
 
 CONTAINER_HOME = Path("/home/coder")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+SHELL_ENTRYPOINT = "/bin/bash"
 DEFAULT_OPENCODE_ENTRYPOINT = "/usr/bin/opencode"
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
 
@@ -105,6 +106,14 @@ def main(
         bool,
         typer.Option(
             "--opencode", help="Shortcut for --entrypoint the bundled OpenCode (default)."
+        ),
+    ] = False,
+    shell: Annotated[
+        bool,
+        typer.Option(
+            "--shell",
+            help="Open a bash shell: exec into the running container for this directory "
+            "if there is one (podman/docker), else start a new container running bash.",
         ),
     ] = False,
     web_mode: Annotated[
@@ -232,6 +241,8 @@ def main(
 
         ai-container --entrypoint /bin/bash -c 'echo hi'
 
+        ai-container --shell
+
         ai-container --claude -- --debug
 
     [dim]The last example forwards a literal "--debug" to Claude Code itself,
@@ -247,7 +258,7 @@ def main(
         cli_mounts = [config.parse_mount(m, source="--extra-mount") for m in extra_mount or []]
         cli_envs = {config.env_name(e, source="--extra-env"): e for e in env or []}
         resolved_entrypoint = _resolve_entrypoint(
-            entrypoint=entrypoint, claude=claude, opencode=opencode
+            entrypoint=entrypoint, claude=claude, opencode=opencode, shell=shell, web=web_mode
         )
         selected_engine = engine_ops.resolve_engine(
             explicit=runtime,
@@ -321,6 +332,18 @@ def main(
         reporter.fail(str(exc))
         raise typer.Exit(1) from exc
 
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if shell and (running := engine_ops.find_running(selected_engine, cwd)):
+        reporter.ok(f"Attaching to running {selected_engine.value} container: {running}")
+        exec_argv = build_exec_argv(
+            engine=selected_engine,
+            name=running,
+            command=resolved_entrypoint,
+            tool_args=tool_args,
+            tty_args=engine_ops.tty_args(selected_engine) if interactive else ["-i"],
+        )
+        raise typer.Exit(run(exec_argv))
+
     image = engine_ops.image_name(selected_engine)
     selinux_status = selinux.detect(host_platform=host_platform, reporter=reporter)
     # docker gets label=disable (see identity_args); its --mount has no z option.
@@ -341,6 +364,7 @@ def main(
         "--rm",
         "--name",
         container_name,
+        *engine_ops.label_args(cwd),
         "-e",
         f"HOME={CONTAINER_HOME}",
         "-w",
@@ -421,7 +445,7 @@ def main(
         )
         args.extend(web_config.args)
         tool_args = web_config.tool_args
-    elif sys.stdin.isatty() and sys.stdout.isatty():
+    elif interactive:
         args.extend(engine_ops.tty_args(selected_engine))
     else:
         args.append("-i")
@@ -461,9 +485,17 @@ def main(
     raise typer.Exit(run(argv))
 
 
-def _resolve_entrypoint(*, entrypoint: str | None, claude: bool, opencode: bool) -> str:
+def _resolve_entrypoint(
+    *, entrypoint: str | None, claude: bool, opencode: bool, shell: bool, web: bool
+) -> str:
     if claude and opencode:
         raise CliError("Cannot use --claude and --opencode together.")
+    if shell:
+        if claude or opencode or entrypoint is not None or web:
+            raise CliError(
+                "--shell cannot be combined with --claude, --opencode, --entrypoint or --web."
+            )
+        return SHELL_ENTRYPOINT
     if entrypoint is not None:
         return entrypoint
     if claude:

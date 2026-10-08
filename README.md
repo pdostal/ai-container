@@ -204,6 +204,10 @@ ai-container --add-host openqa-ai.qam.suse.cz:169.254.1.2
 
 Repeatable for multiple entries. See [Configuration file](#configuration-file) below for setting these as a standing per-host default instead.
 
+### Shell
+
+`ai-container --shell` opens a bash shell. If a container started from the current directory is already running (podman/docker), it `exec`s into the newest one; otherwise it starts a new container running `/bin/bash`. Extra args go to bash. Containers started before this flag existed carry no label and aren't found; Apple `container` always starts a new one. Can't be combined with `--claude`, `--opencode`, `--entrypoint` or `--web`.
+
 ### Custom entrypoint
 
 You can specify a custom entrypoint using the `--entrypoint` flag:

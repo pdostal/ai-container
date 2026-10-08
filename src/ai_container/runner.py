@@ -31,6 +31,12 @@ def build_argv(
     ]
 
 
+def build_exec_argv(
+    *, engine: Engine, name: str, command: str, tool_args: list[str], tty_args: list[str]
+) -> list[str]:
+    return [engine.value, "exec", *tty_args, name, command, *tool_args]
+
+
 def spawn_relay_chmod_fix(engine: Engine, container_name: str) -> threading.Thread:
     """Start the SSH relay chmod workaround in the background, matching the
     bash script's ``(...)  &`` job that races the container's own startup.

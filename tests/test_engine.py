@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 from pytest_subprocess import FakeProcess
@@ -178,3 +179,27 @@ def test_docker_is_rootless_daemon_error(fp: FakeProcess) -> None:
     fp.register(_INFO, returncode=1, stderr="Cannot connect to the Docker daemon")
     with pytest.raises(engine.EngineProbeError, match="Cannot connect"):
         engine.docker_is_rootless()
+
+
+def _ps(cwd: Path) -> list[str]:
+    label = f"label={engine.WORKDIR_LABEL}={cwd}"
+    return ["podman", "ps", "--filter", label, "--format", "{{.Names}}"]
+
+
+def test_find_running_returns_newest(fp: FakeProcess, tmp_path: Path) -> None:
+    fp.register(_ps(tmp_path), stdout="ai-new\nai-old\n")
+    assert engine.find_running(Engine.PODMAN, tmp_path) == "ai-new"
+
+
+def test_find_running_none(fp: FakeProcess, tmp_path: Path) -> None:
+    fp.register(_ps(tmp_path), stdout="")
+    assert engine.find_running(Engine.PODMAN, tmp_path) is None
+
+
+def test_find_running_none_on_engine_error(fp: FakeProcess, tmp_path: Path) -> None:
+    fp.register(_ps(tmp_path), returncode=1, stdout="junk")
+    assert engine.find_running(Engine.PODMAN, tmp_path) is None
+
+
+def test_find_running_unsupported_on_container(tmp_path: Path) -> None:
+    assert engine.find_running(Engine.CONTAINER, tmp_path) is None

@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 from .console import Reporter
 from .models import Engine
@@ -106,6 +107,29 @@ def oci_runtime_args(engine: Engine, *, microvm: bool) -> list[str]:
 
 def tty_args(engine: Engine) -> list[str]:
     return ["-i", "-t"] if engine is Engine.CONTAINER else ["-it"]
+
+
+WORKDIR_LABEL = "ai-container.workdir"
+
+
+def label_args(cwd: Path) -> list[str]:
+    return ["--label", f"{WORKDIR_LABEL}={cwd}"]
+
+
+def find_running(engine: Engine, cwd: Path) -> str | None:
+    """Newest running container launched from ``cwd`` (None if none, or on
+    `container`, which has no label filter).
+    """
+    if engine is Engine.CONTAINER:
+        return None
+    result = subprocess.run(
+        [engine.value, "ps", "--filter", f"label={WORKDIR_LABEL}={cwd}", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    names = result.stdout.split() if result.returncode == 0 else []
+    return names[0] if names else None
 
 
 def debug_args(engine: Engine) -> list[str]:

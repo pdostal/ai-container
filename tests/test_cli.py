@@ -1164,3 +1164,40 @@ def test_removed_flags_are_forwarded_to_the_assistant(
     assert result.exit_code == 0, result.output
     (argv,) = captured_run
     assert argv[-1] == old
+
+
+def test_shell_conflicts_with_other_entrypoint_flags(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--shell", "--claude"])
+    assert result.exit_code == 1
+    assert "--shell cannot be combined" in result.output
+
+
+def test_shell_starts_new_container_with_bash_and_label(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(engine_ops, "find_running", lambda *a: None)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--shell", "-c", "echo hi"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--entrypoint") + 1] == "/bin/bash"
+    assert f"{engine_ops.WORKDIR_LABEL}={workdir}" in argv
+    assert argv[-2:] == ["-c", "echo hi"]
+
+
+def test_shell_execs_into_running_container(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(engine_ops, "find_running", lambda *a: "ai-abc")
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--shell"])
+    assert result.exit_code == 0, result.output
+    assert captured_run == [["podman", "exec", "-i", "ai-abc", "/bin/bash"]]

@@ -61,3 +61,10 @@ def test_spawn_relay_chmod_fix_runs_in_background(monkeypatch: pytest.MonkeyPatc
     thread = runner.spawn_relay_chmod_fix(Engine.CONTAINER, "ai-xyz")
     thread.join(timeout=2)
     assert calls == [(Engine.CONTAINER, "ai-xyz")]
+
+
+def test_build_exec_argv() -> None:
+    argv = runner.build_exec_argv(
+        engine=Engine.PODMAN, name="ai-abc", command="/bin/bash", tool_args=["-l"], tty_args=["-it"]
+    )
+    assert argv == ["podman", "exec", "-it", "ai-abc", "/bin/bash", "-l"]
