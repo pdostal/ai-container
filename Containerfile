@@ -19,7 +19,7 @@ RUN gem install ruby-lsp
 RUN npm config set allow-scripts=protobufjs,core-js,opencode-ai,msgpackr-extract --location=user
 RUN npm install -g npm@latest
 RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope opencode-ai pyright typescript \
-    typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
+    typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted \
     @alibaba-group/open-code-review
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
