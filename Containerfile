@@ -19,8 +19,9 @@ RUN gem install ruby-lsp
 RUN npm config set allow-scripts=protobufjs,core-js,opencode-ai,msgpackr-extract --location=user
 RUN npm install -g npm@latest
 RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope opencode-ai pyright typescript \
-    typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted \
-    @alibaba-group/open-code-review
+    typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
+RUN npm install -g --allow-git=all --allow-scripts=@alibaba-group/open-code-review git+https://github.com/pdostal/open-code-review.git#feat/anthropic-vertex
+RUN node /usr/lib/node_modules/@alibaba-group/open-code-review/scripts/install.js
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
       group_name="$(getent group "${CODER_GID}" | cut -d: -f1)"; \
