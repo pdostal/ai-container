@@ -38,7 +38,7 @@ RUN mkdir -p \
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 COPY --chmod=755 init.sh /usr/local/bin/init.sh
 RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
-RUN mkdir -p /usr/local/share/skillspector/opencode/{commands,tools} && \
+RUN mkdir -p /usr/local/share/skillspector/opencode/commands /usr/local/share/skillspector/opencode/tools && \
     curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/commands/skillspector.md -o /usr/local/share/skillspector/opencode/commands/skillspector.md && \
     curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts && \
     curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan_lib.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts
