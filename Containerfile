@@ -1,9 +1,9 @@
 FROM registry.opensuse.org/opensuse/tumbleweed:latest
 ARG CODER_UID=1000
 ARG CODER_GID=1000
-RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo gitleaks gh glab gitea-tea bat less cnf cnf-bash openssh-clients cnf hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
+RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo gitleaks gh glab gitea-tea bat less cnf cnf-bash openssh-clients hostname openQA-client spec-cleaner rpmlint osc obs-service-* \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy ShellCheck nodejs26 npm26 jq python314-ruff python314-flake8 python314-yamllint yq iputils forgejo-cli kubernetes-client kustomize \
-    gitea-tea golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
+    golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep \
     gopls lua-language-server clang-tools ruby taplo java-21-openjdk-headless php8 \
     php8-ctype php8-curl php8-dom php8-fileinfo php8-gd \
@@ -20,8 +20,6 @@ RUN npm config set allow-scripts=protobufjs,core-js,opencode-ai,msgpackr-extract
 RUN npm install -g npm@latest
 RUN npm install -g markdownlint-cli perlnavigator-server openrtk @ramtinj95/opencode-tokenscope opencode-ai pyright typescript \
     typescript-language-server yaml-language-server bash-language-server intelephense vscode-langservers-extracted
-RUN npm install -g --allow-git=all --allow-scripts=@alibaba-group/open-code-review git+https://github.com/pdostal/open-code-review.git#feat/anthropic-vertex
-RUN node /usr/lib/node_modules/@alibaba-group/open-code-review/scripts/install.js
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
       group_name="$(getent group "${CODER_GID}" | cut -d: -f1)"; \
@@ -38,12 +36,19 @@ RUN mkdir -p \
       /home/coder/.ssh/agent \
       /etc/ssh/ssh_config.d
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
+COPY --chmod=755 init.sh /usr/local/bin/init.sh
 RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
+RUN mkdir -p /usr/local/share/skillspector/opencode/{commands,tools} && \
+    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/commands/skillspector.md -o /usr/local/share/skillspector/opencode/commands/skillspector.md && \
+    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts && \
+    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan_lib.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts
 RUN chown -R coder:$(id -gn coder) /home/coder
+RUN export GOPROXY=direct GOBIN=/usr/local/bin && \
+    go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest && \
+    go install github.com/hashicorp/terraform-ls@latest
 WORKDIR /home/coder
 USER coder
-RUN GOPROXY=direct go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
-RUN GOPROXY=direct go install github.com/hashicorp/terraform-ls@latest
+ENV PATH="/home/coder/.local/bin:${PATH}"
 # rust-analyzer has no distro/cargo/npm-installable release; grab the latest prebuilt binary.
 RUN mkdir -p /home/coder/.local/bin && \
     curl -fsSL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-$(uname -m)-unknown-linux-gnu.gz | gunzip -c > /home/coder/.local/bin/rust-analyzer && \
@@ -54,8 +59,5 @@ RUN mkdir -p /home/coder/.local/share/lemminx && \
     unzip -p /tmp/vscode-xml.vsix extension/server/org.eclipse.lemminx-uber.jar > /home/coder/.local/share/lemminx/lemminx.jar && \
     rm -f /tmp/vscode-xml.vsix
 RUN curl -fsSL https://claude.ai/install.sh | bash
-#RUN curl -fsSL https://opencode.ai/install | bash
-RUN npx --yes skills add plusky/openQA-skill --skill openqa -g -a opencode -y
-RUN curl -fsSL https://raw.githubusercontent.com/anthonystepvoy/caveman-opencode/main/install-opencode.sh | sh
-RUN rtk init -g
-ENV PATH="/home/coder/.local/bin:$PATH"
+RUN uv tool install graphifyy
+RUN uv tool install git+https://github.com/NVIDIA/skillspector.git@v2.12.0
