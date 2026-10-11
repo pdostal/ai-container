@@ -21,7 +21,7 @@
 # disable_envs = ["PUSHOVER_TOKEN"]
 
 # Host paths (directories or files) to bind-mount, on top of the built-in rw mounts of
-# ~/.claude, ~/.claude.json and OpenCode's config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
+# ~/.agents, ~/.claude, ~/.claude.json and OpenCode's config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
 # Without TARGET, paths under $HOME map to the same place under /home/coder. Relative
 # SOURCEs resolve from the launch directory; missing ones are skipped. The CLI wins on
 # target clashes and over disable_mounts. Default: []. Flag: --extra-mount / -m.

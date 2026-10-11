@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_container import __version__, git_utils, selinux
+from ai_container import __version__, defaults, git_utils, selinux
 from ai_container import cli as cli_mod
 from ai_container import engine as engine_ops
 
@@ -442,6 +442,53 @@ def test_explicit_entrypoint_wins_over_claude(
     assert "/home/coder/.local/bin/claude" not in argv
 
 
+def test_init_creates_and_mounts_host_assistant_state(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--init"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--entrypoint") + 1] == "/usr/local/bin/init.sh"
+    for rel in defaults.ASSISTANT_DIRECTORY_MOUNTS:
+        assert (isolated_home / rel).is_dir()
+        assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
+    assert (isolated_home / ".claude.json").is_file()
+    assert f"{isolated_home}/.claude.json:/home/coder/.claude.json" in argv
+    assert "Created directory" in result.output
+    assert "Created file" in result.output
+
+
+def test_init_preserves_and_skips_existing_paths(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    agents = isolated_home / ".agents"
+    agents.write_text("keep")
+    claude_json = isolated_home / ".claude.json"
+    claude_json.write_text("keep")
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--init"])
+    assert result.exit_code == 0, result.output
+    assert agents.read_text() == "keep"
+    assert claude_json.read_text() == "keep"
+    assert "Already exists, skipping" in result.output
+
+
+@pytest.mark.parametrize("flag", ["--claude", "--opencode", "--shell", "--web"])
+def test_init_conflicts_with_other_launch_modes(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--init", flag])
+    assert result.exit_code == 1
+    assert "--init cannot be combined" in result.output
+
+
+def test_init_conflicts_with_explicit_entrypoint(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--init", "--entrypoint", "/bin/true"])
+    assert result.exit_code == 1
+    assert "--init cannot be combined" in result.output
+
+
 def test_no_tool_mounts_or_envs_without_config(
     isolated_home: Path,
     workdir: Path,
@@ -458,7 +505,7 @@ def test_no_tool_mounts_or_envs_without_config(
 
 
 def _make_assistant_paths(home: Path) -> None:
-    for d in (".claude", ".config/opencode", ".local/share/opencode"):
+    for d in (".agents", ".claude", ".config/opencode", ".local/share/opencode"):
         (home / d).mkdir(parents=True)
     (home / ".claude.json").write_text("{}")
 
@@ -469,7 +516,7 @@ def test_assistant_mounts_are_automatic_and_read_write(
     _make_assistant_paths(isolated_home)
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    for rel in (".claude", ".claude.json", ".config/opencode", ".local/share/opencode"):
+    for rel in (".agents", ".claude", ".claude.json", ".config/opencode", ".local/share/opencode"):
         assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
     assert not _mount_flags_targeting(argv, "/home/coder/.cache/opencode")  # missing on host
 

@@ -27,6 +27,9 @@ jobs:
       - name: Format check (ruff format)
         run: uv run ruff format --check .
 
+      - name: Check shell scripts
+        run: bash -n init.sh && shellcheck init.sh
+
       - name: Type check (mypy)
         run: uv run mypy
 

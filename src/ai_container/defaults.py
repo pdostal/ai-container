@@ -7,14 +7,16 @@ from pathlib import Path
 
 from .models import MountAccess, MountEntry
 
-ASSISTANT_MOUNTS = (
+ASSISTANT_DIRECTORY_MOUNTS = (
+    ".agents",
     ".claude",
-    ".claude.json",
     ".config/opencode",
     ".local/share/opencode",
     ".local/state/opencode",
     ".cache/opencode",
 )
+ASSISTANT_FILE_MOUNTS = (".claude.json",)
+ASSISTANT_MOUNTS = (*ASSISTANT_DIRECTORY_MOUNTS, *ASSISTANT_FILE_MOUNTS)
 ADC_TARGET = ".config/gcloud/application_default_credentials.json"
 
 

@@ -67,6 +67,7 @@ app = typer.Typer(
 CONTAINER_HOME = Path("/home/coder")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
+INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
 DEFAULT_OPENCODE_ENTRYPOINT = "/usr/bin/opencode"
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
 
@@ -114,6 +115,13 @@ def main(
             "--shell",
             help="Open a bash shell: exec into the running container for this directory "
             "if there is one (podman/docker), else start a new container running bash.",
+        ),
+    ] = False,
+    init_mode: Annotated[
+        bool,
+        typer.Option(
+            "--init",
+            help="Initialize host-persisted assistant configuration and skills.",
         ),
     ] = False,
     web_mode: Annotated[
@@ -235,6 +243,8 @@ def main(
 
         ai-container
 
+        ai-container --init
+
         ai-container --web --web-port 5000
 
         ai-container --claude --resume
@@ -258,7 +268,12 @@ def main(
         cli_mounts = [config.parse_mount(m, source="--extra-mount") for m in extra_mount or []]
         cli_envs = {config.env_name(e, source="--extra-env"): e for e in env or []}
         resolved_entrypoint = _resolve_entrypoint(
-            entrypoint=entrypoint, claude=claude, opencode=opencode, shell=shell, web=web_mode
+            entrypoint=entrypoint,
+            claude=claude,
+            opencode=opencode,
+            shell=shell,
+            init_mode=init_mode,
+            web=web_mode,
         )
         selected_engine = engine_ops.resolve_engine(
             explicit=runtime,
@@ -306,6 +321,8 @@ def main(
             cwd=cwd,
             workspaces=launcher_config.workspaces,
         )
+        if init_mode:
+            _initialize_assistant_paths(host_home, reporter)
     except engine_ops.UnknownEngineError as exc:
         reporter.fail(
             f"Unknown --runtime/AI_CONTAINER_RUNTIME value: {exc} "
@@ -486,10 +503,23 @@ def main(
 
 
 def _resolve_entrypoint(
-    *, entrypoint: str | None, claude: bool, opencode: bool, shell: bool, web: bool
+    *,
+    entrypoint: str | None,
+    claude: bool,
+    opencode: bool,
+    shell: bool,
+    init_mode: bool,
+    web: bool,
 ) -> str:
     if claude and opencode:
         raise CliError("Cannot use --claude and --opencode together.")
+    if init_mode:
+        if claude or opencode or entrypoint is not None or shell or web:
+            raise CliError(
+                "--init cannot be combined with --claude, --opencode, --entrypoint, "
+                "--shell or --web."
+            )
+        return INIT_ENTRYPOINT
     if shell:
         if claude or opencode or entrypoint is not None or web:
             raise CliError(
@@ -501,6 +531,28 @@ def _resolve_entrypoint(
     if claude:
         return DEFAULT_CLAUDE_ENTRYPOINT
     return DEFAULT_OPENCODE_ENTRYPOINT
+
+
+def _initialize_assistant_paths(host_home: Path, reporter: Reporter) -> None:
+    reporter.step("Preparing host assistant state")
+    try:
+        for relative in defaults.ASSISTANT_DIRECTORY_MOUNTS:
+            path = host_home / relative
+            if path.exists():
+                reporter.detail(f"Already exists, skipping: {path}")
+            else:
+                path.mkdir(parents=True)
+                reporter.ok(f"Created directory: {path}")
+        for relative in defaults.ASSISTANT_FILE_MOUNTS:
+            path = host_home / relative
+            if path.exists():
+                reporter.detail(f"Already exists, skipping: {path}")
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+                reporter.ok(f"Created file: {path}")
+    except OSError as exc:
+        raise CliError(f"Could not initialize host assistant state: {exc}") from exc
 
 
 def _apply_mounts(
