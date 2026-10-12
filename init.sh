@@ -7,19 +7,19 @@ step() {
 
 step "Installing the openQA skill"
 npx -y skills add os-autoinst/openQA-skill --skill openqa -g -a opencode -y
-npx -y skills add os-autoinst/openQA-skill --skill openqa -g -a claude -y
+npx -y skills add os-autoinst/openQA-skill --skill openqa -g -a claude-code -y
 
 step "Installing the openSUSE packaging skill"
 npx -y skills add openSUSE/openSUSE-packaging-skill --skill opensuse-packaging -g -a opencode -y
-npx -y skills add openSUSE/openSUSE-packaging-skill --skill opensuse-packaging -g -a claude -y
+npx -y skills add openSUSE/openSUSE-packaging-skill --skill opensuse-packaging -g -a claude-code -y
 
 step "Installing the frontend design skill"
-npx -y skills add Leonxlnx/taste-skill --skill design-taste-frontend -g -a opencode
-npx -y skills add Leonxlnx/taste-skill --skill design-taste-frontend -g -a claude
+npx -y skills add Leonxlnx/taste-skill --skill design-taste-frontend -g -a opencode -y
+npx -y skills add Leonxlnx/taste-skill --skill design-taste-frontend -g -a claude-code -y
 
 step "Installing Caveman"
-npx -y skills add JuliusBrussee/caveman -g -a opencode
-npx -y skills add JuliusBrussee/caveman -g -a claude
+npx -y skills add JuliusBrussee/caveman -g --skill caveman -a opencode -y
+npx -y skills add JuliusBrussee/caveman -g --skill caveman -a claude-code -y
 
 step "Configuring RTK"
 rtk init -g --opencode

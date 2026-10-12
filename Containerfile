@@ -43,7 +43,7 @@ RUN mkdir -p /usr/local/share/skillspector/opencode/commands /usr/local/share/sk
     curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts && \
     curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan_lib.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts
 RUN chown -R coder:$(id -gn coder) /home/coder
-RUN export GOPROXY=direct GOBIN=/usr/local/bin && \
+RUN export GOBIN=/usr/local/bin && \
     go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest && \
     go install github.com/hashicorp/terraform-ls@latest
 WORKDIR /home/coder
