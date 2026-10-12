@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import socket
 import tempfile
 from collections.abc import Iterator
@@ -824,21 +825,24 @@ def test_debug_flag_prepends_opencode_debug_args(
     assert "--log-level=debug" not in argv  # --debug alone doesn't turn on engine debug output
 
 
-def test_debug_podman_flag_adds_engine_debug_output_only(
+def test_debug_runtime_flag_adds_engine_debug_output_only(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
-    runner.invoke(cli_mod.app, ["--runtime", "podman", "--debug-podman", "--", "--resume"])
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--debug-runtime", "--", "--resume"]
+    )
     (argv,) = captured_run
+    assert "".join(("Running: " + shlex.join(argv)).split()) in "".join(result.output.split())
     assert argv[1] == "--log-level=debug"
     tail = argv[argv.index("localhost/ai") + 1 :]
     assert tail == ["--resume"]  # opencode's own debug args are NOT added
 
 
-def test_debug_and_debug_podman_are_independent_and_combinable(
+def test_debug_and_debug_runtime_are_independent_and_combinable(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
     runner.invoke(
-        cli_mod.app, ["--runtime", "podman", "--debug", "--debug-podman", "--", "--resume"]
+        cli_mod.app, ["--runtime", "podman", "--debug", "--debug-runtime", "--", "--resume"]
     )
     (argv,) = captured_run
     assert argv[1] == "--log-level=debug"

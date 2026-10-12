@@ -452,7 +452,7 @@ without an explicit `--workspace` flag.
 [`src/ai_container/`](src/ai_container/)) that assembles a single
 `podman run` / `docker run` / `container run` invocation: it never talks to a
 daemon API directly (the only probe is `docker info`, to detect rootless mode),
-so engine debug output (via `--debug-podman`, separate from the launcher's own
+so engine debug output (via `--debug-runtime`, separate from the launcher's own
 `--debug`) reflects exactly what would happen if you ran the printed command
 yourself.
 

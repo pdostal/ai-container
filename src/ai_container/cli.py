@@ -206,11 +206,11 @@ def main(
     debug: Annotated[
         bool, typer.Option("--debug", help="Verbose launcher + assistant debug output.")
     ] = False,
-    debug_podman: Annotated[
+    debug_runtime: Annotated[
         bool,
         typer.Option(
-            "--debug-podman",
-            help="Verbose podman/container/docker engine debug output (very noisy).",
+            "--debug-runtime",
+            help="Print the full runtime command and enable its debug output (very noisy).",
         ),
     ] = False,
     microvm: Annotated[
@@ -361,6 +361,8 @@ def main(
             tool_args=tool_args,
             tty_args=engine_ops.tty_args(selected_engine) if interactive else ["-i"],
         )
+        if debug_runtime:
+            reporter.step(f"Running: {shlex.join(exec_argv)}")
         raise typer.Exit(run(exec_argv))
 
     image = engine_ops.image_name(selected_engine)
@@ -483,7 +485,7 @@ def main(
     args.extend(engine_ops.oci_runtime_args(selected_engine, microvm=microvm))
 
     engine_debug_args: list[str] = []
-    if debug_podman:
+    if debug_runtime:
         engine_debug_args = engine_ops.debug_args(selected_engine)
     if debug and resolved_entrypoint.endswith("/opencode"):
         tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
@@ -510,6 +512,8 @@ def main(
         image=image,
         tool_args=tool_args,
     )
+    if debug_runtime:
+        reporter.step(f"Running: {shlex.join(argv)}")
     raise typer.Exit(run(argv))
 
 
