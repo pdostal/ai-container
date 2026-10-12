@@ -412,6 +412,12 @@ entry is skipped if a referenced variable is unset or empty). Entries combine
 with repeatable `--extra-env` flags; a flag entry with the same `NAME` replaces
 the config one. `env` was renamed to `extra_envs`; the old key is an error.
 
+`export_vars` maps a variable name to a host command whose stdout becomes its
+value, e.g. `export_vars = { GH_TOKEN = "gh auth token" }` (useful when a token
+lives in the host keyring). The command runs at launch without a shell (no
+pipes or `&&`) and the variable is skipped if it fails or prints nothing. It
+overrides `extra_envs`; `--extra-env` and `disable_envs` win over it.
+
 `disable_envs` (or `--disable-env NAME`) drops the named variables, built-in
 Vertex ones included; `--extra-env` flags always win. A config entry with the
 same `NAME` replaces a built-in one. Launcher-set variables (`HOME`,

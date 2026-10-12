@@ -903,6 +903,35 @@ def test_cli_env_assignment_overrides_config_value(
     assert "X=config" not in argv
 
 
+def test_export_vars_sets_command_output(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(
+        isolated_home, '[export_vars]\nTOK = "echo secret"\nBAD = "false"\nNONE = "true"\n'
+    )
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert "TOK=secret" in argv
+    assert not any(a.startswith(("BAD=", "NONE=")) for a in argv)
+
+
+def test_export_vars_precedence(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(
+        isolated_home,
+        'extra_envs = ["A=cfg"]\n[export_vars]\nA = "echo cmd"\nB = "echo cmd"\nC = "echo cmd"\n',
+    )
+    runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--extra-env", "B=cli", "--disable-env", "C"]
+    )
+    (argv,) = captured_run
+    assert "A=cmd" in argv
+    assert "A=cfg" not in argv
+    assert "B=cli" in argv
+    assert not any(a in argv for a in ("B=cmd", "C=cmd"))
+
+
 def test_invalid_extra_env_flag_errors(
     isolated_home: Path, workdir: Path, fake_engine_path: Path
 ) -> None:

@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import platform
 import re
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -448,6 +450,15 @@ def main(
         else:
             env_entries[name] = entry
     env_entries.update(cli_envs)
+    for name, command in launcher_config.export_vars.items():
+        if name in disabled_envs or name in cli_envs:
+            reporter.debug_fail(f"{name} export skipped (disabled or set by --extra-env)")
+        elif (exported := _run_env_command(command)) is None:
+            reporter.debug_fail(f"{name} skipped (command failed or printed nothing)")
+        else:
+            reporter.debug_ok(f"Setting {name} environment variable from command")
+            env_entries.pop(name, None)
+            args.extend(["-e", f"{name}={exported}"])
     for entry in env_entries.values():
         _apply_env(args, entry, reporter)
 
@@ -606,6 +617,15 @@ def _apply_add_hosts(
     for entry in entries:
         reporter.debug_ok(f"Adding hosts entry: {entry}")
         args.append(f"--add-host={entry}")
+
+
+def _run_env_command(command: str) -> str | None:
+    """Run ``command`` on the host (no shell); return stripped stdout, or None on any failure."""
+    try:
+        result = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=10)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
 
 
 def _apply_env(args: list[str], entry: str, reporter: Reporter) -> None:

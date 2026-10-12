@@ -200,6 +200,28 @@ def test_load_config_reads_env_assignments(tmp_path: Path) -> None:
     assert config.load_config(path).extra_envs == ("A", "B=1", "C=${A}/x")
 
 
+def test_load_config_reads_export_vars(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('[export_vars]\nGH_TOKEN = "gh auth token"\n')
+    assert config.load_config(path).export_vars == {"GH_TOKEN": "gh auth token"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'export_vars = ["A"]',
+        "[export_vars]\nA = 1",
+        '[export_vars]\nA = ""',
+        '[export_vars]\n"BAD NAME" = "x"',
+    ],
+)
+def test_load_config_rejects_bad_export_vars(tmp_path: Path, text: str) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text(text + "\n")
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
 def test_example_file_loads_and_is_all_defaults() -> None:
     example = Path(__file__).parent.parent / "ai-container.toml.example"
     assert config.load_config(example) == config.LauncherConfig()

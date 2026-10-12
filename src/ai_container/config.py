@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .models import MountAccess, MountEntry
@@ -31,6 +31,7 @@ class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
     extra_envs: tuple[str, ...] = ()
     disable_envs: tuple[str, ...] = ()
+    export_vars: dict[str, str] = field(default_factory=dict)
     extra_mounts: tuple[MountEntry, ...] = ()
     disable_mounts: tuple[Path, ...] = ()
     ssh_agent: bool = True
@@ -84,6 +85,15 @@ def _str_list(path: Path, data: dict[str, object], key: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
+def _parse_export_vars(path: Path, data: dict[str, object]) -> dict[str, str]:
+    raw = data.get("export_vars", {})
+    if not isinstance(raw, dict) or not all(isinstance(v, str) and v for v in raw.values()):
+        raise ConfigError(f"{path}: 'export_vars' must be a table of NAME = \"command\" strings")
+    for name in raw:
+        env_name(name, source=f"{path}: 'export_vars'")
+    return dict(raw)
+
+
 def load_config(path: Path) -> LauncherConfig:
     """Load ``path``, tolerating a missing file the way MountSpec.exists() does."""
     if not path.is_file():
@@ -111,6 +121,8 @@ def load_config(path: Path) -> LauncherConfig:
     for entry in (*extra_envs, *disable_envs):
         env_name(entry, source=str(path))
 
+    export_vars = _parse_export_vars(path, data)
+
     ssh_agent = data.get("ssh_agent", True)
     if not isinstance(ssh_agent, bool):
         raise ConfigError(f"{path}: 'ssh_agent' must be a boolean")
@@ -128,6 +140,7 @@ def load_config(path: Path) -> LauncherConfig:
         add_hosts=_str_list(path, data, "add_hosts"),
         extra_envs=extra_envs,
         disable_envs=disable_envs,
+        export_vars=export_vars,
         extra_mounts=extra_mounts,
         disable_mounts=disable_mounts,
         ssh_agent=ssh_agent,
