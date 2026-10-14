@@ -11,6 +11,12 @@
 # Flag: --add-host.
 # add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
 
+# Raw extra engine network args, one token per entry. A --network=... entry replaces
+# the default --network=pasta (podman). Default: []. Flag: --network-arg.
+# Example: pasta on host interface dummy0 (-i) with container address (-a), prefix (-n)
+# and gateway (-g), plus a DNS server. Use 172.29.0.1 as DNS only if the host runs one.
+# extra_network_args = ["--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1", "--dns=1.1.1.1"]
+
 # Environment for the container, on top of the built-in Vertex AI variables (see the
 # README). Nothing else is set by default. NAME forwards the host value when
 # set; NAME=value sets a literal, where ${HOST_VAR} expands from the host (entry is

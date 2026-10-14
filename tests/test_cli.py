@@ -270,6 +270,45 @@ def test_add_host_config_and_cli_combine_and_dedupe(
     assert argv.count("--add-host=shared.example.com:5.5.5.5") == 1
 
 
+@pytest.mark.parametrize(
+    "flags",
+    [["--network-arg=--network=pasta:-i,dummy0"], ["--network-arg", "--network=pasta:-i,dummy0"]],
+)
+def test_network_arg_replaces_default_network(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    flags: list[str],
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", *flags])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--network=pasta:-i,dummy0" in argv
+    assert "--network=pasta" not in argv
+    assert "--userns=keep-id" in argv
+
+
+def test_network_arg_config_and_cli_combine_and_dedupe(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    config_dir = isolated_home / ".config"
+    config_dir.mkdir()
+    (config_dir / "ai-container.toml").write_text(
+        'extra_network_args = ["--dns=1.1.1.1", "--dns=8.8.8.8"]\n'
+    )
+    result = runner.invoke(
+        cli_mod.app,
+        ["--runtime", "podman", "--network-arg=--dns=8.8.8.8", "--network-arg=--dns=9.9.9.9"],
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "--network=pasta" in argv
+    assert argv.count("--dns=8.8.8.8") == 1
+    assert "--dns=1.1.1.1" in argv
+    assert "--dns=9.9.9.9" in argv
+
+
 def test_add_host_from_malformed_config_file_errors(
     isolated_home: Path, workdir: Path, fake_engine_path: Path
 ) -> None:

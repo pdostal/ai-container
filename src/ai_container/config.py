@@ -29,6 +29,7 @@ class Workspace:
 @dataclass(frozen=True, slots=True)
 class LauncherConfig:
     add_hosts: tuple[str, ...] = ()
+    extra_network_args: tuple[str, ...] = ()
     extra_envs: tuple[str, ...] = ()
     disable_envs: tuple[str, ...] = ()
     export_vars: dict[str, str] = field(default_factory=dict)
@@ -138,6 +139,7 @@ def load_config(path: Path) -> LauncherConfig:
 
     return LauncherConfig(
         add_hosts=_str_list(path, data, "add_hosts"),
+        extra_network_args=_str_list(path, data, "extra_network_args"),
         extra_envs=extra_envs,
         disable_envs=disable_envs,
         export_vars=export_vars,

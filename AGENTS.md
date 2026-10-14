@@ -42,7 +42,7 @@ src/ai_container/
   selinux.py     sestatus parsing + the :z/:Z suffix rules
   defaults.py    built-in assistant mounts + host-driven Vertex AI envs/credentials mount
   mounts.py      `-v` flag builder (apply_mount) + the disable-path filter
-  config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra/disable envs+mounts (SOURCE[:TARGET][:ro|rw], NAME[=value]), ssh_agent, workspaces
+  config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra_network_args, extra/disable envs+mounts (SOURCE[:TARGET][:ro|rw], NAME[=value]), ssh_agent, workspaces
   ssh_agent.py   SSH agent forwarding + the `container --ssh` rootless relay chmod workaround
   web.py         --web mode (random password, host IP detection, banner)
   naming.py      random container names / web passwords

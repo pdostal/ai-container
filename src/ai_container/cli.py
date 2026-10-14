@@ -180,6 +180,16 @@ def main(
             help="Extra /etc/hosts entry as host:ip. Repeatable. Not supported by `container`.",
         ),
     ] = None,
+    network_arg: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--network-arg",
+            help="Raw extra engine network arg, one token per flag. Repeatable. A --network=... "
+            "value replaces the default --network=pasta, e.g. "
+            "--network-arg=--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1 "
+            "--network-arg=--dns=1.1.1.1",
+        ),
+    ] = None,
     env: Annotated[
         list[str] | None,
         typer.Option(
@@ -310,6 +320,9 @@ def main(
                 "(Apple's container tool has no /etc/hosts equivalent flag)."
             )
         combined_add_hosts = list(dict.fromkeys([*config_add_hosts, *cli_add_hosts]))
+        extra_network_args = list(
+            dict.fromkeys([*launcher_config.extra_network_args, *(network_arg or [])])
+        )
         try:
             cwd = Path.cwd()
         except (FileNotFoundError, OSError) as exc:
@@ -481,7 +494,9 @@ def main(
         args.append("-i")
         reporter.debug_detail("\u25cb No TTY detected; running without -t")
 
-    args.extend(engine_ops.network_args(selected_engine))
+    for extra in extra_network_args:
+        reporter.debug_ok(f"Adding network arg: {extra}")
+    args.extend(engine_ops.network_args(selected_engine, extra_network_args))
     args.extend(engine_ops.oci_runtime_args(selected_engine, microvm=microvm))
 
     engine_debug_args: list[str] = []

@@ -38,6 +38,19 @@ def test_load_config_reads_add_hosts_and_env(tmp_path: Path) -> None:
     assert result.extra_envs == ("OPENQA_HOST", "OPENQA_TOKEN")
 
 
+def test_load_config_reads_extra_network_args(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('extra_network_args = ["--network=pasta:-i,dummy0"]\n')
+    assert config.load_config(path).extra_network_args == ("--network=pasta:-i,dummy0",)
+
+
+def test_load_config_rejects_non_list_extra_network_args(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('extra_network_args = "nope"\n')
+    with pytest.raises(config.ConfigError):
+        config.load_config(path)
+
+
 def test_load_config_rejects_malformed_toml(tmp_path: Path) -> None:
     path = tmp_path / "ai-container.toml"
     path.write_text("this is not [valid toml\n")

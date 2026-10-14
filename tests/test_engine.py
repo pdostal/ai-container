@@ -83,6 +83,20 @@ def test_network_args_only_for_podman() -> None:
     assert engine.network_args(Engine.CONTAINER) == []
 
 
+def test_network_args_extra_appended_after_defaults() -> None:
+    assert engine.network_args(Engine.PODMAN, ["--dns=1.1.1.1"]) == [
+        "--network=pasta",
+        "--userns=keep-id",
+        "--dns=1.1.1.1",
+    ]
+    assert engine.network_args(Engine.DOCKER, ["--dns=1.1.1.1"]) == ["--dns=1.1.1.1"]
+
+
+@pytest.mark.parametrize("flag", ["--network=pasta:-i,dummy0", "--net=host"])
+def test_network_args_extra_network_replaces_pasta(flag: str) -> None:
+    assert engine.network_args(Engine.PODMAN, [flag]) == ["--userns=keep-id", flag]
+
+
 def test_tty_args_differ_per_engine() -> None:
     assert engine.tty_args(Engine.PODMAN) == ["-it"]
     assert engine.tty_args(Engine.CONTAINER) == ["-i", "-t"]

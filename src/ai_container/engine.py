@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from .console import Reporter
@@ -89,10 +90,15 @@ def identity_args(engine: Engine, *, docker_rootless: bool = False) -> list[str]
     return ["--uid", str(os.getuid()), "--gid", str(os.getgid())]
 
 
-def network_args(engine: Engine) -> list[str]:
+def network_args(engine: Engine, extra: Sequence[str] = ()) -> list[str]:
+    """Default podman networking, plus raw ``extra`` args; an extra ``--network``/``--net``
+    replaces the default ``--network=pasta``.
+    """
+    base: list[str] = []
     if engine is Engine.PODMAN:
-        return ["--network=pasta", "--userns=keep-id"]
-    return []
+        overridden = any(a.partition("=")[0] in ("--network", "--net") for a in extra)
+        base = ["--userns=keep-id"] if overridden else ["--network=pasta", "--userns=keep-id"]
+    return [*base, *extra]
 
 
 def oci_runtime_args(engine: Engine, *, microvm: bool) -> list[str]:

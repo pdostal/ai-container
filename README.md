@@ -17,6 +17,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Workspaces](#workspaces)
   - [Vertex AI](#vertex-ai)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
+  - [Custom network arguments](#custom-network-arguments)
   - [Custom entrypoint](#custom-entrypoint)
 - [Configuration file](#configuration-file)
 - [What the launcher does](#what-the-launcher-does)
@@ -345,6 +346,36 @@ Repeatable for multiple entries. See
 [Configuration file](#configuration-file) below for setting these as a
 standing per-host default instead.
 
+### Custom network arguments
+
+Pass raw extra network arguments to the engine, one token per
+`--network-arg` (repeatable). On podman, a `--network=...` (or `--net=...`)
+value replaces the default `--network=pasta`; `--userns=keep-id` is kept. To
+attach the container to the host's `dummy0` interface with its own address,
+gateway and DNS server (see [Network Configuration](#network-configuration)):
+
+```bash
+ai-container \
+  --network-arg=--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1 \
+  --network-arg=--dns=1.1.1.1
+```
+
+In the pasta options, `-i` is the host interface, `-a` the container's address,
+`-n` its prefix length and `-g` its gateway; `--dns` sets the resolver. Use
+`--dns=172.29.0.1` instead only if the host runs a resolver on that address. Use
+the `--network-arg=VALUE` form, since the value starts with `--`. Other
+arguments are appended after the defaults. The values aren't validated or
+restricted per engine. The container reaches host services on `172.29.0.1` and
+the internet through the gateway. To set them as a standing default, use
+`extra_network_args` in the [configuration file](#configuration-file):
+
+```toml
+extra_network_args = [
+  "--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1",
+  "--dns=1.1.1.1",
+]
+```
+
 ### Shell
 
 `ai-container --shell` opens a bash shell. If a container started from the
@@ -383,6 +414,7 @@ elsewhere). A fully commented template lives in
 
 ```toml
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
+extra_network_args = ["--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1", "--dns=1.1.1.1"]
 extra_envs = ["MY_VARIABLE", "FIXED=value", "DERIVED=${MY_VARIABLE}"]
 disable_envs = ["PUSHOVER_TOKEN"]
 extra_mounts = ["~/.claude", "~/.config/gh:ro", "~/src/shared"]
@@ -403,6 +435,11 @@ dirs = ["/home/user/repos/api"]
 command line, de-duplicated. On the `container` engine, config-supplied
 `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an
 explicit `--add-host` on that engine is a hard error instead.
+
+`extra_network_args` lists raw engine network arguments, combined additively
+with `--network-arg` flags and de-duplicated (see
+[Custom network arguments](#custom-network-arguments)). A `--network=...` entry
+replaces the default `--network=pasta` on podman.
 
 `extra_envs` lists the container's environment on top of the built-in
 [Vertex AI](#vertex-ai) variables; nothing else is set by default. `NAME`
@@ -483,6 +520,35 @@ policy rejects any traffic from the `public` zone into `trusted`, so the
 `dummy0` interface stays reachable from the container (via pasta) but not from
 the network. Bind MCP servers to `172.29.0.1:<port>` on the host and point the
 container's MCP client config at that address.
+
+To attach the container to `dummy0` itself with its own address (`172.29.0.2`),
+gateway (`172.29.0.1`, the host) and DNS server, pass
+`--network-arg=--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1` and
+`--network-arg=--dns=1.1.1.1`, or the equivalent `extra_network_args` (see
+[Custom network arguments](#custom-network-arguments)). Without `-a`/`-g`,
+pasta copies the host's own `dummy0` address into the container and, since
+`dummy0` has no gateway, the container has no routes. `--dns=172.29.0.1` only
+works if the host runs a resolver on that address.
+
+Alternatively, give the container's network a dedicated firewalld zone that
+accepts everything, instead of `trusted`:
+
+```bash
+sudo firewall-cmd --permanent --new-zone=ai-container
+sudo firewall-cmd --permanent --zone=ai-container --set-target=ACCEPT
+sudo firewall-cmd --permanent --zone=trusted --remove-interface=dummy0
+sudo firewall-cmd --permanent --policy=block-pub-dummy --remove-egress-zone=trusted
+sudo firewall-cmd --permanent --policy=block-pub-dummy --add-egress-zone=ai-container
+sudo firewall-cmd --reload
+sudo nmcli connection modify dummy0 connection.zone ai-container
+sudo nmcli connection up dummy0
+```
+
+The zone must exist (after the reload) before NetworkManager can assign
+`dummy0` to it. The `block-pub-dummy` policy now targets the new zone, so the
+`public` zone still can't reach `dummy0`. Untested: pasta connects from the
+host's own sockets, so firewalld may not filter container-to-host traffic at
+all.
 
 This `pasta`/`dummy0` setup is podman/Linux-specific and doesn't apply when
 running with Docker or Apple's `container` tool. With Docker, containers use
