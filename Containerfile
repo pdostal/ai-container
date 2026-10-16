@@ -6,7 +6,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious os-autoinst-distri-opensuse-deps os-autoinst-devel perl-Test-Exception \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep \
     gopls lua-language-server clang-tools ruby taplo java-21-openjdk-headless php8 \
-    php8-ctype php8-curl php8-dom php8-fileinfo php8-gd \
+    php8-ctype php8-curl php8-dom php8-fileinfo php8-gd skillspector skillspector-mcp \
     php8-mbstring php8-openssl php8-pdo php8-posix php8-zip php8-zlib \
     php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis \
     php8-xmlreader php8-xmlwriter php8-sqlite php8-tokenizer php8-phar \
