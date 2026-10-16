@@ -38,10 +38,10 @@ RUN mkdir -p \
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 COPY --chmod=755 init.sh /usr/local/bin/init.sh
 RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
-RUN mkdir -p /usr/local/share/skillspector/opencode/commands /usr/local/share/skillspector/opencode/tools && \
-    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/commands/skillspector.md -o /usr/local/share/skillspector/opencode/commands/skillspector.md && \
-    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts && \
-    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan_lib.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts
+#RUN mkdir -p /usr/local/share/skillspector/opencode/commands /usr/local/share/skillspector/opencode/tools && \
+#    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/commands/skillspector.md -o /usr/local/share/skillspector/opencode/commands/skillspector.md && \
+#    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts && \
+#    curl -fsSL https://raw.githubusercontent.com/NVIDIA/skillspector/v2.12.0/.opencode/tools/skillspector_scan_lib.ts -o /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts
 RUN chown -R coder:$(id -gn coder) /home/coder
 RUN export GOBIN=/usr/local/bin && \
     go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest && \
