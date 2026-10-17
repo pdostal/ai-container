@@ -308,6 +308,8 @@ def main(
             init_mode=init_mode,
             web=web_mode,
         )
+        if codex and entrypoint is None:
+            tool_args = ["--disable", "daemon_auto_start", *tool_args]
         selected_engine = engine_ops.resolve_engine(
             explicit=runtime,
             env_runtime=os.environ.get("AI_CONTAINER_RUNTIME"),

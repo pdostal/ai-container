@@ -498,6 +498,16 @@ def test_assistant_flag_switches_entrypoint(
     assert entrypoint in argv
 
 
+def test_codex_shortcut_disables_daemon_auto_start(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--codex", "--resume"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "/usr/bin/codex" in argv
+    assert argv[-3:] == ["--disable", "daemon_auto_start", "--resume"]
+
+
 def test_explicit_entrypoint_wins_over_claude(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
