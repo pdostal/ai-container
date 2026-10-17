@@ -67,7 +67,7 @@ def configure(
     return SshForwarding(args=[], env={}, needs_relay_chmod=False)
 
 
-def fix_relay_permissions(engine: Engine, container_name: str, *, attempts: int = 2) -> None:
+def fix_relay_permissions(engine: Engine, container_name: str, *, attempts: int = 20) -> None:
     """Loosen the root-owned per-container `--ssh` relay socket so the
     non-root `coder` user can reach it.
 
@@ -95,4 +95,4 @@ def fix_relay_permissions(engine: Engine, container_name: str, *, attempts: int 
         if result.returncode == 0:
             return
         if attempt + 1 < attempts:
-            time.sleep(1)
+            time.sleep(0.25)

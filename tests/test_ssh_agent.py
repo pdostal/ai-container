@@ -140,6 +140,20 @@ def test_fix_relay_permissions_retries_then_gives_up(
     ssh_agent.fix_relay_permissions(Engine.CONTAINER, "ai-abc", attempts=2)
 
 
+def test_fix_relay_permissions_waits_for_relay_socket(
+    fp: FakeProcess, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    command = ["container", "exec", "-u", "root", "ai-abc", "sh", "-c", fp.any()]
+    fp.register(command, returncode=1)
+    fp.register(command, returncode=1)
+    fp.register(command, returncode=0)
+
+    ssh_agent.fix_relay_permissions(Engine.CONTAINER, "ai-abc")
+
+    assert fp.call_count(command) == 3
+
+
 def test_fix_relay_permissions_never_inherits_terminal_stdin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
