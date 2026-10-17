@@ -2,10 +2,9 @@
 // Injects a knowledge graph reminder before the first shell command of a
 // session when the graph exists.
 //
-// One file for both runtimes. OpenCode 2 reads `id` and `setup()` from the
-// default export; OpenCode 1 (1.3.4 and later) reads `server()` from it. Each
-// ignores the other's function. Nothing is imported from an opencode package:
-// a plain file in .opencode/plugins/ cannot resolve one.
+// OpenCode 2 plugin: reads `id` and `setup()` from the default export. Nothing
+// is imported from an opencode package: a plain file in .opencode/plugins/
+// cannot resolve one.
 //
 // IMPORTANT: keep the reminder string free of backticks and $(...) constructs.
 // The hook prepends `echo "<reminder>" ; <cmd>` to the user's shell command;
@@ -43,20 +42,5 @@ export default {
       event.input = { ...event.input, command: REMINDER + event.input.command };
       reminded.add(event.sessionID);
     });
-  },
-
-  // OpenCode 1: the command tool is "bash", and the server lives as long as
-  // the session, so the reminder is tracked per project directory.
-  async server({ directory }) {
-    return {
-      "tool.execute.before": async (input, output) => {
-        if (input.tool !== "bash" || typeof output.args?.command !== "string") return;
-        if (reminded.has(directory)) return;
-        if (!hasGraph(directory)) return;
-
-        output.args.command = REMINDER + output.args.command;
-        reminded.add(directory);
-      },
-    };
   },
 };
