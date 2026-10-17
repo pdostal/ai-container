@@ -462,7 +462,7 @@ overrides `extra_envs`; `--extra-env` and `disable_envs` win over it.
 `disable_envs` (or `--disable-env NAME`) drops the named variables, built-in
 Vertex ones included; `--extra-env` flags always win. A config entry with the
 same `NAME` replaces a built-in one. Launcher-set variables (`HOME`,
-`SSH_AUTH_SOCK`, web-mode credentials) are not affected.
+`SSH_AUTH_SOCK`, server-mode credentials) are not affected.
 
 `extra_mounts` lists host directories or files to bind-mount as
 `SOURCE[:TARGET][:ro|rw]`, merged with `--extra-mount` and the built-in

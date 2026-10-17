@@ -5,7 +5,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy python314-flake8 python314-yamllint kubernetes-client \
     golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious perl-Test-Exception jq yq \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep npm26 \
-    clang-tools ruby taplo java-21-openjdk-headless php8 os-autoinst-distri-opensuse-deps nodejs26 bat \
+    clang-tools ruby taplo php8 os-autoinst-distri-opensuse-deps nodejs26 bat \
     php8-ctype php8-curl php8-dom php8-fileinfo php8-gd skillspector skillspector-mcp os-autoinst-devel python314-ruff iputils \
     php8-mbstring php8-openssl php8-pdo php8-posix php8-zip php8-zlib ShellCheck forgejo-cli kustomize gitleaks gh glab gitea-tea \
     php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis less cnf cnf-bash openssh-clients hostname openQA-client \

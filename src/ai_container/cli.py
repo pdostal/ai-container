@@ -4,7 +4,7 @@ Usage syntax::
 
     ai-container [WRAPPER OPTIONS] -- [TOOL ARGS]
 
-    Everything before ``--`` configures this launcher (engine, mounts, server
+Everything before ``--`` configures this launcher (engine, mounts, server
 mode, ...). Everything after ``--`` is passed straight through to the
 entrypoint running inside the container (OpenCode, Claude Code, or
 whatever ``--entrypoint`` points at).
