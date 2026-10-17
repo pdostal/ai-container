@@ -10,6 +10,8 @@ from .models import MountAccess, MountEntry
 ASSISTANT_DIRECTORY_MOUNTS = (
     ".agents",
     ".claude",
+    ".codex",
+    ".copilot",
     ".config/opencode",
     ".local/share/opencode",
     ".local/state/opencode",

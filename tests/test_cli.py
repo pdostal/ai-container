@@ -75,12 +75,23 @@ def test_refuses_to_run_from_home(
     assert "your entire $HOME" in result.output
 
 
-def test_claude_and_opencode_together_is_an_error(
-    isolated_home: Path, workdir: Path, fake_engine_path: Path
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("--claude", "--opencode"),
+        ("--claude", "--codex"),
+        ("--claude", "--copilot"),
+        ("--opencode", "--codex"),
+        ("--opencode", "--copilot"),
+        ("--codex", "--copilot"),
+    ],
+)
+def test_assistant_shortcuts_are_mutually_exclusive(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, first: str, second: str
 ) -> None:
-    result = runner.invoke(cli_mod.app, ["--claude", "--opencode"])
+    result = runner.invoke(cli_mod.app, [first, second])
     assert result.exit_code == 1
-    assert "Cannot use --claude and --opencode together" in result.output
+    assert "Cannot combine assistant shortcuts" in result.output
 
 
 def test_happy_path_builds_expected_argv(
@@ -462,15 +473,29 @@ def test_default_entrypoint_is_opencode(
 ) -> None:
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert "/usr/bin/opencode" in argv
+    assert "/usr/local/bin/opencode" in argv
 
 
-def test_claude_flag_switches_entrypoint(
-    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+@pytest.mark.parametrize(
+    ("flag", "entrypoint"),
+    [
+        ("--claude", "/home/coder/.local/bin/claude"),
+        ("--opencode", "/usr/local/bin/opencode"),
+        ("--codex", "/usr/bin/codex"),
+        ("--copilot", "/usr/local/bin/copilot"),
+    ],
+)
+def test_assistant_flag_switches_entrypoint(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    flag: str,
+    entrypoint: str,
 ) -> None:
-    runner.invoke(cli_mod.app, ["--runtime", "podman", "--claude"])
+    runner.invoke(cli_mod.app, ["--runtime", "podman", flag])
     (argv,) = captured_run
-    assert "/home/coder/.local/bin/claude" in argv
+    assert entrypoint in argv
 
 
 def test_explicit_entrypoint_wins_over_claude(
@@ -512,7 +537,9 @@ def test_init_preserves_and_skips_existing_paths(
     assert "Already exists, skipping" in result.output
 
 
-@pytest.mark.parametrize("flag", ["--claude", "--opencode", "--shell", "--web"])
+@pytest.mark.parametrize(
+    "flag", ["--claude", "--opencode", "--codex", "--copilot", "--shell", "--web"]
+)
 def test_init_conflicts_with_other_launch_modes(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
 ) -> None:
@@ -527,6 +554,23 @@ def test_init_conflicts_with_explicit_entrypoint(
     result = runner.invoke(cli_mod.app, ["--init", "--entrypoint", "/bin/true"])
     assert result.exit_code == 1
     assert "--init cannot be combined" in result.output
+
+
+@pytest.mark.parametrize("flag", ["--claude", "--codex", "--copilot"])
+def test_web_conflicts_with_non_opencode_shortcuts(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--web", flag])
+    assert result.exit_code == 1
+    assert "--web can only use the bundled OpenCode entrypoint" in result.output
+
+
+def test_web_conflicts_with_explicit_entrypoint(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--web", "--entrypoint", "/bin/true"])
+    assert result.exit_code == 1
+    assert "--web can only use the bundled OpenCode entrypoint" in result.output
 
 
 def test_no_tool_mounts_or_envs_without_config(
@@ -545,7 +589,14 @@ def test_no_tool_mounts_or_envs_without_config(
 
 
 def _make_assistant_paths(home: Path) -> None:
-    for d in (".agents", ".claude", ".config/opencode", ".local/share/opencode"):
+    for d in (
+        ".agents",
+        ".claude",
+        ".codex",
+        ".copilot",
+        ".config/opencode",
+        ".local/share/opencode",
+    ):
         (home / d).mkdir(parents=True)
     (home / ".claude.json").write_text("{}")
 
@@ -556,7 +607,15 @@ def test_assistant_mounts_are_automatic_and_read_write(
     _make_assistant_paths(isolated_home)
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    for rel in (".agents", ".claude", ".claude.json", ".config/opencode", ".local/share/opencode"):
+    for rel in (
+        ".agents",
+        ".claude",
+        ".claude.json",
+        ".codex",
+        ".copilot",
+        ".config/opencode",
+        ".local/share/opencode",
+    ):
         assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
     assert not _mount_flags_targeting(argv, "/home/coder/.cache/opencode")  # missing on host
 

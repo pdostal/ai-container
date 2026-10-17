@@ -70,8 +70,16 @@ CONTAINER_HOME = Path("/home/coder")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
 INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
-DEFAULT_OPENCODE_ENTRYPOINT = "/usr/bin/opencode"
+DEFAULT_OPENCODE_ENTRYPOINT = "/usr/local/bin/opencode"
 DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
+DEFAULT_CODEX_ENTRYPOINT = "/usr/bin/codex"
+DEFAULT_COPILOT_ENTRYPOINT = "/usr/local/bin/copilot"
+BUNDLED_ASSISTANT_ENTRYPOINTS = (
+    DEFAULT_OPENCODE_ENTRYPOINT,
+    DEFAULT_CLAUDE_ENTRYPOINT,
+    DEFAULT_CODEX_ENTRYPOINT,
+    DEFAULT_COPILOT_ENTRYPOINT,
+)
 
 
 class CliError(Exception):
@@ -110,6 +118,13 @@ def main(
         typer.Option(
             "--opencode", help="Shortcut for --entrypoint the bundled OpenCode (default)."
         ),
+    ] = False,
+    codex: Annotated[
+        bool, typer.Option("--codex", help="Shortcut for --entrypoint the bundled Codex CLI.")
+    ] = False,
+    copilot: Annotated[
+        bool,
+        typer.Option("--copilot", help="Shortcut for --entrypoint the bundled Copilot CLI."),
     ] = False,
     shell: Annotated[
         bool,
@@ -261,6 +276,10 @@ def main(
 
         ai-container --claude --resume
 
+        ai-container --codex
+
+        ai-container --copilot
+
         ai-container --entrypoint /bin/bash -c 'echo hi'
 
         ai-container --shell
@@ -283,6 +302,8 @@ def main(
             entrypoint=entrypoint,
             claude=claude,
             opencode=opencode,
+            codex=codex,
+            copilot=copilot,
             shell=shell,
             init_mode=init_mode,
             web=web_mode,
@@ -511,7 +532,7 @@ def main(
         reporter=reporter,
         workspace=active_workspace.name if active_workspace else None,
     )
-    if debug or resolved_entrypoint not in (DEFAULT_OPENCODE_ENTRYPOINT, DEFAULT_CLAUDE_ENTRYPOINT):
+    if debug or resolved_entrypoint not in BUNDLED_ASSISTANT_ENTRYPOINTS:
         reporter.step(f"Using entrypoint: {resolved_entrypoint}")
     if tool_args:
         reporter.step(f"Passing params: {' '.join(tool_args)}")
@@ -537,29 +558,47 @@ def _resolve_entrypoint(
     entrypoint: str | None,
     claude: bool,
     opencode: bool,
+    codex: bool,
+    copilot: bool,
     shell: bool,
     init_mode: bool,
     web: bool,
 ) -> str:
-    if claude and opencode:
-        raise CliError("Cannot use --claude and --opencode together.")
+    selected = [
+        flag
+        for flag, enabled in (
+            ("--claude", claude),
+            ("--opencode", opencode),
+            ("--codex", codex),
+            ("--copilot", copilot),
+        )
+        if enabled
+    ]
+    if len(selected) > 1:
+        raise CliError(f"Cannot combine assistant shortcuts: {', '.join(selected)}.")
+    if web and (claude or codex or copilot or entrypoint is not None):
+        raise CliError("--web can only use the bundled OpenCode entrypoint.")
     if init_mode:
-        if claude or opencode or entrypoint is not None or shell or web:
+        if selected or entrypoint is not None or shell or web:
             raise CliError(
-                "--init cannot be combined with --claude, --opencode, --entrypoint, "
-                "--shell or --web."
+                "--init cannot be combined with an assistant shortcut, --entrypoint, --shell "
+                "or --web."
             )
         return INIT_ENTRYPOINT
     if shell:
-        if claude or opencode or entrypoint is not None or web:
+        if selected or entrypoint is not None or web:
             raise CliError(
-                "--shell cannot be combined with --claude, --opencode, --entrypoint or --web."
+                "--shell cannot be combined with an assistant shortcut, --entrypoint or --web."
             )
         return SHELL_ENTRYPOINT
     if entrypoint is not None:
         return entrypoint
     if claude:
         return DEFAULT_CLAUDE_ENTRYPOINT
+    if codex:
+        return DEFAULT_CODEX_ENTRYPOINT
+    if copilot:
+        return DEFAULT_COPILOT_ENTRYPOINT
     return DEFAULT_OPENCODE_ENTRYPOINT
 
 

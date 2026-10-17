@@ -108,8 +108,8 @@ ai-container [WRAPPER OPTIONS] -- [TOOL ARGS]
 
 Everything before `--` configures the launcher itself (engine, mounts, web
 mode, ...). Everything after `--` is passed straight through to the entrypoint
-running inside the container (OpenCode, Claude Code, or whatever `--entrypoint`
-points at).
+running inside the container (OpenCode, Claude Code, Codex, Copilot, or whatever
+`--entrypoint` points at).
 
 `--` is only *required* when the tool argument you're forwarding collides with
 one of the launcher's own flag names (see the list in `ai-container --help`) or
@@ -124,6 +124,8 @@ ai-container
 # initialize persistent skills and configuration
 ai-container --init
 ai-container --claude
+ai-container --codex
+ai-container --copilot
 # --resume isn't ours, forwarded automatically
 ai-container --claude --resume
 ai-container --entrypoint /bin/bash -c 'echo hi'   # same for -c
@@ -225,8 +227,8 @@ installs the OpenQA and frontend design skills, Caveman, the RTK and Graphify
 assistant configuration, and SkillSpector's `/skillspector` command and
 `skillspector_scan` tool for OpenCode.
 
-`--init` can't be combined with `--claude`, `--opencode`, `--entrypoint`,
-`--shell` or `--web`.
+`--init` can't be combined with an assistant shortcut, `--entrypoint`, `--shell`
+or `--web`.
 
 ### Web mode
 
@@ -237,7 +239,7 @@ ai-container --web
 ```
 
 The container runs detached. The web interface URL, username, and password are
-printed on startup.
+printed on startup. Web mode only supports the bundled OpenCode entrypoint.
 
 Additional web options:
 
@@ -383,7 +385,7 @@ current directory is already running (podman/docker), it `exec`s into the
 newest one; otherwise it starts a new container running `/bin/bash`. Extra args
 go to bash. Containers started before this flag existed carry no label and
 aren't found; Apple `container` always starts a new one. Can't be combined with
-`--claude`, `--opencode`, `--entrypoint` or `--web`.
+an assistant shortcut, `--entrypoint` or `--web`.
 
 ### Custom entrypoint
 
@@ -400,9 +402,9 @@ ai-container --entrypoint /bin/echo -- hello world
 ai-container -- --help
 ```
 
-`--claude` and `--opencode` are shortcuts for the two bundled assistants'
-entrypoints; an explicit `--entrypoint` always takes precedence over either.
-Passing `--claude` and `--opencode` together is an error.
+`--claude`, `--opencode`, `--codex` and `--copilot` are shortcuts for the
+bundled assistants' entrypoints; an explicit `--entrypoint` always takes
+precedence over a shortcut. Assistant shortcuts are mutually exclusive.
 
 ## Configuration file
 
@@ -577,7 +579,7 @@ client config at `host.container.internal:<port>`.
 - **Security**: gpg2, openssh-clients, gitleaks, SkillSpector
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
-- **AI Coding Assistants**: Claude Code, OpenCode
+- **AI Coding Assistants**: Claude Code, OpenCode, Codex, GitHub Copilot CLI
 
 ## Agent Skills
 

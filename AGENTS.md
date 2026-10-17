@@ -6,7 +6,7 @@ Guidance for AI coding assistants (and humans) working in this repository.
 
 Two independent things live here:
 
-1. **`Containerfile`** (+ `99-ai-container.conf` and `init.sh`) — builds the *guest* container image (openSUSE Tumbleweed with Claude Code, OpenCode, and a pile of language toolchains/LSPs). `init.sh` configures skills and tools whose output persists in host mounts. Built with `podman build`/`container build`. Not a Python project; no build/test tooling applies to it beyond `podman build` itself.
+1. **`Containerfile`** (+ `99-ai-container.conf` and `init.sh`) — builds the *guest* container image (openSUSE Tumbleweed with Claude Code, OpenCode, Codex, Copilot, and a pile of language toolchains/LSPs). `init.sh` configures skills and tools whose output persists in host mounts. Built with `podman build`/`container build`. Not a Python project; no build/test tooling applies to it beyond `podman build` itself.
 2. **`src/ai_container/`** — the *host*-side launcher: a `uv`-managed Python CLI (Typer + Rich) that assembles and runs the `podman run`/`container run` invocation. This is what the rest of this file is about.
 
 The launcher never talks to a container-engine daemon API directly — it only ever builds an argv list and executes `podman`/`container` as a subprocess, printing the exact command with `--debug-runtime`.
