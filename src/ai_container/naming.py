@@ -1,4 +1,4 @@
-"""Random container names and web-mode passwords."""
+"""Random container names and server-mode passwords."""
 
 from __future__ import annotations
 
@@ -15,5 +15,5 @@ def random_container_name() -> str:
     return f"ai-{suffix}"
 
 
-def random_web_password(length: int = 20) -> str:
+def random_server_password(length: int = 20) -> str:
     return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))

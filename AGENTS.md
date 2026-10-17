@@ -22,7 +22,7 @@ uv run ruff format .          # format
 uv run ruff check .           # lint (add --fix to auto-fix)
 uv run mypy                   # strict type-check
 uv run pytest                 # full test suite, with coverage report
-uv run pytest tests/test_cli.py -k web  # run a subset
+uv run pytest tests/test_cli.py -k server  # run a subset
 ```
 
 CI (`.github/workflows/ci.yml`) runs `ruff check`, `ruff format --check`, `mypy`, `pytest`, `scripts/check_hardcoded_config.py`, and a `gitleaks` scan on every push/PR. Keep all of these green before considering work done.
@@ -44,8 +44,8 @@ src/ai_container/
   mounts.py      `-v` flag builder (apply_mount) + the disable-path filter
   config.py      optional ~/.config/ai-container.toml (see ai-container.toml.example): add_hosts, extra_network_args, extra/disable envs+mounts (SOURCE[:TARGET][:ro|rw], NAME[=value]), ssh_agent, workspaces
   ssh_agent.py   SSH agent forwarding + the `container --ssh` rootless relay chmod workaround
-  web.py         --web mode (random password, host IP detection, banner)
-  naming.py      random container names / web passwords
+  server.py      --server mode (random password, host IP detection, banner)
+  naming.py      random container names / server passwords
   runner.py      final argv assembly + subprocess execution + `stty sane` cleanup
   rich_patches.py  strips typer's Rich help/error box borders while keeping color (see its docstring)
 tests/           one test module per src module, plus tests/test_cli.py for end-to-end CLI behavior
@@ -55,7 +55,7 @@ scripts/
 
 ## Code style
 
-- Small, single-purpose modules over one big script. Tool mounts and env vars are not hardcoded: they live in the user's config (`extra_mounts`/`extra_envs`) and go through one `_apply_mounts()`/`apply_mount()` path. Only the assistant-state mounts, the Vertex defaults (`defaults.py`), SSH (agent + `known_hosts`) and launch-time mechanics (workdir, worktree, `HOME`, web auth) stay in code.
+- Small, single-purpose modules over one big script. Tool mounts and env vars are not hardcoded: they live in the user's config (`extra_mounts`/`extra_envs`) and go through one `_apply_mounts()`/`apply_mount()` path. Only the assistant-state mounts, the Vertex defaults (`defaults.py`), SSH (agent + `known_hosts`) and launch-time mechanics (workdir, worktree, `HOME`, server auth) stay in code.
 - Prefer pure functions that take explicit parameters (`host_home`, `container_home`, `host_platform`, ...) over reading global state, so they stay trivially testable.
 - Keep comments terse; only add them where the *why* isn't obvious from the code (e.g. the SELinux `:z`/`:Z` suffix rules, the `container --ssh` root-owned relay socket workaround).
 - Full type hints everywhere; `mypy --strict` must pass with zero ignores added without a comment explaining why.

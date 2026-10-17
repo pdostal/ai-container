@@ -4,7 +4,7 @@ Usage syntax::
 
     ai-container [WRAPPER OPTIONS] -- [TOOL ARGS]
 
-Everything before ``--`` configures this launcher (engine, mounts, web
+    Everything before ``--`` configures this launcher (engine, mounts, server
 mode, ...). Everything after ``--`` is passed straight through to the
 entrypoint running inside the container (OpenCode, Claude Code, or
 whatever ``--entrypoint`` points at).
@@ -40,8 +40,8 @@ from . import (
     paths,
     rich_patches,
     selinux,
+    server,
     ssh_agent,
-    web,
 )
 from . import engine as engine_ops
 from . import workspace as workspace_ops
@@ -141,18 +141,19 @@ def main(
             help="Initialize host-persisted assistant configuration and skills.",
         ),
     ] = False,
-    web_mode: Annotated[
-        bool, typer.Option("--web", help="Run OpenCode as a background web server.")
+    server_mode: Annotated[
+        bool, typer.Option("--server", help="Run OpenCode as a background HTTP server.")
     ] = False,
-    web_port: Annotated[int, typer.Option("--web-port", help="Port for --web.")] = 4996,
-    web_username: Annotated[
-        str, typer.Option("--web-username", help="HTTP basic auth username for --web.")
-    ] = "coder",
-    web_password: Annotated[
+    server_port: Annotated[int, typer.Option("--server-port", help="Port for --server.")] = 4996,
+    server_username: Annotated[
+        str,
+        typer.Option("--server-username", help="HTTP basic auth username (V2 requires opencode)."),
+    ] = "opencode",
+    server_password: Annotated[
         str | None,
         typer.Option(
-            "--web-password",
-            help="HTTP basic auth password for --web (random if unset).",
+            "--server-password",
+            help="HTTP basic auth password for --server (random if unset).",
             show_default=False,
         ),
     ] = None,
@@ -272,7 +273,7 @@ def main(
 
         ai-container --init
 
-        ai-container --web --web-port 5000
+        ai-container --server --server-port 5000
 
         ai-container --claude --resume
 
@@ -296,6 +297,18 @@ def main(
     tool_args = list(tool_args or [])
 
     try:
+        for argument in tool_args:
+            if argument.split("=", 1)[0] in {
+                "--web",
+                "--web-port",
+                "--web-username",
+                "--web-password",
+            }:
+                raise CliError(
+                    f"{argument.split('=', 1)[0]} was removed; use --server and --server-* options."
+                )
+        if server_mode and server_username != "opencode":
+            raise CliError("OpenCode V2 requires --server-username opencode.")
         cli_mounts = [config.parse_mount(m, source="--extra-mount") for m in extra_mount or []]
         cli_envs = {config.env_name(e, source="--extra-env"): e for e in env or []}
         resolved_entrypoint = _resolve_entrypoint(
@@ -306,7 +319,7 @@ def main(
             copilot=copilot,
             shell=shell,
             init_mode=init_mode,
-            web=web_mode,
+            server=server_mode,
         )
         if codex and entrypoint is None:
             tool_args = ["--disable", "daemon_auto_start", *tool_args]
@@ -500,17 +513,17 @@ def main(
     for entry in env_entries.values():
         _apply_env(args, entry, reporter)
 
-    if web_mode:
-        web_config = web.configure(
-            port=web_port,
-            username=web_username,
-            password=web_password,
+    if server_mode:
+        server_config = server.configure(
+            port=server_port,
+            username=server_username,
+            password=server_password,
             tool_args=tool_args,
             host_platform=host_platform,
             reporter=reporter,
         )
-        args.extend(web_config.args)
-        tool_args = web_config.tool_args
+        args.extend(server_config.args)
+        tool_args = server_config.tool_args
     elif interactive:
         args.extend(engine_ops.tty_args(selected_engine))
     else:
@@ -564,7 +577,7 @@ def _resolve_entrypoint(
     copilot: bool,
     shell: bool,
     init_mode: bool,
-    web: bool,
+    server: bool,
 ) -> str:
     selected = [
         flag
@@ -578,19 +591,19 @@ def _resolve_entrypoint(
     ]
     if len(selected) > 1:
         raise CliError(f"Cannot combine assistant shortcuts: {', '.join(selected)}.")
-    if web and (claude or codex or copilot or entrypoint is not None):
-        raise CliError("--web can only use the bundled OpenCode entrypoint.")
+    if server and (claude or codex or copilot or entrypoint is not None):
+        raise CliError("--server can only use the bundled OpenCode entrypoint.")
     if init_mode:
-        if selected or entrypoint is not None or shell or web:
+        if selected or entrypoint is not None or shell or server:
             raise CliError(
                 "--init cannot be combined with an assistant shortcut, --entrypoint, --shell "
-                "or --web."
+                "or --server."
             )
         return INIT_ENTRYPOINT
     if shell:
-        if selected or entrypoint is not None or web:
+        if selected or entrypoint is not None or server:
             raise CliError(
-                "--shell cannot be combined with an assistant shortcut, --entrypoint or --web."
+                "--shell cannot be combined with an assistant shortcut, --entrypoint or --server."
             )
         return SHELL_ENTRYPOINT
     if entrypoint is not None:

@@ -548,7 +548,7 @@ def test_init_preserves_and_skips_existing_paths(
 
 
 @pytest.mark.parametrize(
-    "flag", ["--claude", "--opencode", "--codex", "--copilot", "--shell", "--web"]
+    "flag", ["--claude", "--opencode", "--codex", "--copilot", "--shell", "--server"]
 )
 def test_init_conflicts_with_other_launch_modes(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
@@ -567,20 +567,20 @@ def test_init_conflicts_with_explicit_entrypoint(
 
 
 @pytest.mark.parametrize("flag", ["--claude", "--codex", "--copilot"])
-def test_web_conflicts_with_non_opencode_shortcuts(
+def test_server_conflicts_with_non_opencode_shortcuts(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
 ) -> None:
-    result = runner.invoke(cli_mod.app, ["--web", flag])
+    result = runner.invoke(cli_mod.app, ["--server", flag])
     assert result.exit_code == 1
-    assert "--web can only use the bundled OpenCode entrypoint" in result.output
+    assert "--server can only use the bundled OpenCode entrypoint" in result.output
 
 
-def test_web_conflicts_with_explicit_entrypoint(
+def test_server_conflicts_with_explicit_entrypoint(
     isolated_home: Path, workdir: Path, fake_engine_path: Path
 ) -> None:
-    result = runner.invoke(cli_mod.app, ["--web", "--entrypoint", "/bin/true"])
+    result = runner.invoke(cli_mod.app, ["--server", "--entrypoint", "/bin/true"])
     assert result.exit_code == 1
-    assert "--web can only use the bundled OpenCode entrypoint" in result.output
+    assert "--server can only use the bundled OpenCode entrypoint" in result.output
 
 
 def test_no_tool_mounts_or_envs_without_config(
@@ -911,16 +911,38 @@ def test_cli_mount_wins_over_config_mount_for_same_target(
     assert _mount_flags_targeting(argv, "/home/coder/bin") == [f"{bin_dir}:/home/coder/bin"]
 
 
-def test_web_mode_sets_detach_and_port(
+def test_server_mode_sets_detach_and_port(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
-    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--web", "--web-port", "5050"])
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--server", "--server-port", "5050"]
+    )
     assert result.exit_code == 0, result.output
     (argv,) = captured_run
     assert "-d" in argv
     assert "5050:5050" in argv
-    assert "web" in argv
+    assert "serve" in argv
     assert "--hostname" in argv
+    assert any(a.startswith("OPENCODE_PASSWORD=") for a in argv)
+    assert not any(a.startswith("OPENCODE_SERVER_USERNAME=") for a in argv)
+
+
+@pytest.mark.parametrize("flag", ["--web", "--web-port", "--web-username", "--web-password"])
+def test_removed_web_flags_fail_explicitly(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
+) -> None:
+    for argument in (flag, f"{flag}=obsolete"):
+        result = runner.invoke(cli_mod.app, [argument])
+        assert result.exit_code == 1
+        assert f"{flag} was removed" in result.output
+
+
+def test_server_rejects_unsupported_username(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--server", "--server-username", "coder"])
+    assert result.exit_code == 1
+    assert "OpenCode V2 requires --server-username opencode" in result.output
 
 
 def test_debug_flag_prepends_opencode_debug_args(

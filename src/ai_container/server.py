@@ -1,4 +1,4 @@
-"""Web mode: run OpenCode as a background web server."""
+"""Server mode: run OpenCode as a background HTTP server."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import subprocess
 from dataclasses import dataclass
 
 from .console import Reporter
-from .naming import random_web_password
+from .naming import random_server_password
 
 
 @dataclass(frozen=True, slots=True)
-class WebConfig:
+class ServerConfig:
     args: list[str]
     tool_args: list[str]
     password: str
@@ -56,22 +56,20 @@ def configure(
     tool_args: list[str],
     host_platform: str,
     reporter: Reporter,
-) -> WebConfig:
-    resolved_password = password or random_web_password()
+) -> ServerConfig:
+    resolved_password = password or random_server_password()
     args = [
         "-d",
         "-p",
         f"{port}:{port}",
         "-e",
-        f"OPENCODE_SERVER_PASSWORD={resolved_password}",
-        "-e",
-        f"OPENCODE_SERVER_USERNAME={username}",
+        f"OPENCODE_PASSWORD={resolved_password}",
     ]
-    new_tool_args = ["web", "--hostname", "0.0.0.0", "--port", str(port), *tool_args]  # noqa: S104
+    new_tool_args = ["serve", "--hostname", "0.0.0.0", "--port", str(port), *tool_args]  # noqa: S104
 
     host_ip = _host_ip(host_platform)
-    reporter.ok(f"Web mode: http://{host_ip}:{port}")
-    reporter.ok(f"Web username: {username}")
-    reporter.ok(f"Web password: {resolved_password}")
+    reporter.ok(f"Server mode: http://{host_ip}:{port}")
+    reporter.ok(f"Server username: {username}")
+    reporter.ok(f"Server password: {resolved_password}")
 
-    return WebConfig(args=args, tool_args=new_tool_args, password=resolved_password)
+    return ServerConfig(args=args, tool_args=new_tool_args, password=resolved_password)

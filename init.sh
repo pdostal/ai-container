@@ -20,17 +20,25 @@ npx -y skills add Leonxlnx/taste-skill --skill design-taste-frontend -g -a claud
 step "Installing Caveman"
 npx -y skills add JuliusBrussee/caveman -g --skill caveman -a opencode -y
 npx -y skills add JuliusBrussee/caveman -g --skill caveman -a claude-code -y
+if [ ! -f "$HOME/.config/opencode/plugins/caveman-v2.js" ]; then
+    install -Dm644 /usr/local/share/opencode/caveman-v2.js "$HOME/.config/opencode/plugins/caveman-v2.js"
+fi
 
 step "Configuring RTK"
-rtk init -g --opencode
+if [ ! -f "$HOME/.config/opencode/plugins/rtk-v2.js" ]; then
+    install -Dm644 /usr/local/share/opencode/rtk-v2.js "$HOME/.config/opencode/plugins/rtk-v2.js"
+fi
 
 step "Configuring Graphify"
 graphify install --platform=claude
 graphify install --platform=opencode
 
 step "Installing the SkillSpector OpenCode extension"
-install -Dm644 /usr/local/share/skillspector/opencode/commands/skillspector.md "$HOME/.config/opencode/commands/skillspector.md"
-install -Dm644 /usr/local/share/skillspector/opencode/tools/skillspector_scan.ts "$HOME/.config/opencode/tools/skillspector_scan.ts"
-install -Dm644 /usr/local/share/skillspector/opencode/tools/skillspector_scan_lib.ts "$HOME/.config/opencode/tools/skillspector_scan_lib.ts"
+for file in /usr/local/share/skillspector/opencode/commands/skillspector.md /usr/local/share/skillspector/opencode/plugins/skillspector.js; do
+    target="$HOME/.config/opencode/${file#/usr/local/share/skillspector/opencode/}"
+    if [ ! -e "$target" ]; then
+        install -Dm644 "$file" "$target"
+    fi
+done
 
 printf '\nInitialization complete.\n'

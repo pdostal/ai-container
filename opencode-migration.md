@@ -100,3 +100,41 @@ Read **the entire real configuration** (global and project-level) and transform 
 - Test representative launcher invocations and conflict cases on all runtimes to the extent practical.
 - Review the final diff and `git status`. Keep this prompt file in the repository. Do not commit the user's private OpenCode config/credentials, and do not automatically commit unrelated changes.
 - In your final response provide: (a) summary of changed repo files; (b) what happened to *both* OpenCode config files and any project/global `*.jsonc`; (c) removed vs retained LSP tooling with reasons; (d) plugin/skill issues; (e) exact tests/verification and failures; (f) backup and rollback instructions; (g) any remaining manual steps.
+
+## Portable migration findings (OpenCode 2.0.32, October 2026)
+
+The V2 documentation linked above describes the **native** configuration. The older `https://opencode.ai/config.json` skill examples describe V1 and should not be copied into V2 config. Check the installed release with `opencode --version`, `opencode --help`, `opencode serve --help`, `opencode debug config`, `opencode debug paths`, `opencode plugin list`, and `opencode mcp list`. Server/project configuration remains `opencode.json` (`$schema: https://opencode.ai/config.json`); terminal configuration is a **single global** `~/.config/opencode/cli.json` (`$schema: https://opencode.ai/v2/cli.json`). JSONC comments, commented-out settings, and trailing commas must not be carried across. Back up config and session databases before a V2 launch: a container image downgrade does not downgrade the V2 database.
+
+### Config mapping and authentication
+
+| V1 | Native V2 |
+| --- | --- |
+| `plugin` | `plugins` (package descriptors or local paths) |
+| `provider` | `providers`; custom AI SDK package becomes `aisdk:@ai-sdk/openai-compatible`; provider `options` become `settings` |
+| `mcp` | `mcp.servers`; invert `enabled: false` to `disabled: true` |
+| `permission` | ordered `permissions`; `bash`→`shell`, `task`→`subagent`, `write`/`patch`→`edit` |
+| `agent` / `command` | `agents` / `commands`; agent `prompt`→`system`, `disable`→`disabled`, command `subtask`→`subagent` |
+| `snapshot`, `attachment`, `reference`, `autoupdate: false` | `snapshots`, `media`, `references`, `update: "disable"` |
+| `skills.paths` / `skills.urls` | ordered `skills` array |
+| `tui.mouse: false`, `tui.jsonc` theme/sidebar | global `cli.json` `mouse: false`, `theme: {"mode":"system"}`, `session.sidebar: "hide"` |
+
+Do not copy the V1 default `external_directory: ask` into V2; preserve only explicit restrictions. Remove V1 `lsp` entries: V2 does not run LSPs. Retain referenced provider environment variables, private endpoints, model definitions, disabled MCP entries and explicit permissions, without publishing values in this document. The CLI plugin list belongs to `cli.json` and is distinct from server `plugins`. Local plugin paths resolve relative to their declaring config; confirm the file actually exists. `opencode plugin list` reports running plugins; after a service reload it may take a moment for server plugins to appear. The API endpoint `/api/plugin` can confirm IDs for the selected project.
+
+The npm package is `@opencode/cli`, with executable `opencode`; allow its installation script to select the platform-specific native binary. `opencode serve --hostname 0.0.0.0 --port PORT` is the standalone server. V2 accepts `OPENCODE_PASSWORD` for HTTP Basic auth. Its username is **fixed** as `opencode`; there is no supported server username setting. The launcher keeps `--server-username` for the renamed public interface but rejects any other value. Its default port remains 4996. `opencode --server URL` connects a client to a server; it does not start one. A managed service can persist a password with `opencode service set password VALUE`, which is separate from this launcher's detached standalone server.
+
+### Integrations and retained tooling
+
+V1 plugin functions and `@opencode-ai/plugin` custom-tool modules do not load unchanged in V2. A native server plugin exports `{id, async setup(ctx) {...}}`; register shell command rewrites through `ctx.tool.hook("execute.before", ...)`, custom tools through `ctx.tool.transform(editor => editor.add({...}))`, prompt handling through `ctx.session.hook("prompt", ...)`, and system reinforcement through `ctx.session.hook("context", ...)` and `ctx.session.hook("compaction", ...)`. Lifecycle events arrive from `ctx.event.subscribe({signal})`. The project Graphify plugin already had a V2 `setup` path; its V1 `server` branch is retired. `opencode/rtk-v2.js` replaces RTK's V1 hook; `opencode/caveman-v2.js` reuses Caveman's installed CJS helpers and keeps mode tracking. `skillspector/plugin.js` registers the V2 `skillspector_scan` tool, and `skillspector/skillspector.md` exposes `/skillspector`. SkillSpector v2.12.0's bundled OpenCode tools use V1; its `opencode_cli` LLM provider requires OpenCode 1.18.31, so the V2 tool runs `skillspector scan TARGET --no-llm` for static analysis only. An LLM-backed SkillSpector scan needs upstream V2 support.
+
+Token Optimizer 1.2.0, DCP 3.2.0 and Ponytail 5.3.2 were discovered as V2 plugins. TokenScope 1.8.1 still depends on the V1 plugin API and was removed; `opencode stats` supplies some native usage reporting, but does not replace every TokenScope view. DCP supplies both server and CLI integrations; its schema-only `dcp.jsonc` became strict `dcp.json`. V2 accepts discovered skills, Markdown commands and cavecrew subagents; `init.sh` continues installing openQA, openSUSE packaging, design, Caveman and Graphify skills. Its extension copies skip existing user files.
+
+Removed LSP-only installs: gopls, lua-language-server, terraform-ls, rust-analyzer, lemminx, ruby-lsp, perlnavigator-server, typescript-language-server, yaml-language-server, bash-language-server, intelephense and vscode-langservers-extracted. Kept pyright for type checking, TypeScript for runtime/build tasks, taplo for TOML formatting, and clang-tools for clang-format/clang-tidy. Keep the language runtimes and QA tools independent of OpenCode's former LSP feature.
+
+### Repeating the migration on another machine
+
+1. Pull this repository and inspect local `opencode.json(c)`, `tui.json(c)`, `cli.json`, `.opencode/`, `XDG_CONFIG_HOME`, and project configs. Before editing, take a permission-preserving backup of `~/.config/opencode` (or `$XDG_CONFIG_HOME/opencode`), `~/.local/share/opencode` including auth and SQLite databases, `~/.local/state/opencode`, and `~/.cache/opencode`. Keep that backup outside Git and restrict access to the owner.
+2. Merge active V1 values into native strict `opencode.json` and global `cli.json` using the mapping above. Delete disabled JSONC comments instead of activating them; preserve original modes, credentials, endpoint strings and auth files. Remove obsolete V1 `tui.json(c)` and JSONC only after validating strict JSON. Project-local TUI preferences must be reconciled into the single global CLI config.
+3. Build the image and run `ai-container --init` to install/refresh skills and V2 plugin shims; review existing local plugin paths. Do not overwrite personalized global plugin files. Replace any absolute MCP command path unavailable inside the container with its executable on the image's `PATH`.
+4. Run `opencode debug config`, `opencode plugin list`, `opencode mcp list`, `opencode serve --help`, and a strict JSON parser over the changed files. Check mounted auth and session paths with `opencode debug paths`. Test server Basic auth with username `opencode` and the chosen password. Restart existing OpenCode sessions after config/plugin edits. If rolling back, stop V2 first and restore both the V1 image **and** the backed-up config/data/database together.
+
+The repository's global config conversion on the original development machine is private and is **not** a portable configuration template. Use these findings on each computer, preserving that computer's own provider values, MCP paths, plugin inventory and state.

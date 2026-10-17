@@ -21,7 +21,7 @@
 # README). Nothing else is set by default. NAME forwards the host value when
 # set; NAME=value sets a literal, where ${HOST_VAR} expands from the host (entry is
 # skipped if a referenced variable is unset). Flag: --extra-env. Wins over disable_envs.
-# extra_envs = ["BUGZILLA_API_KEY", "OPENCODE_DISABLE_LSP_DOWNLOAD=true", "VERTEXAI_PROJECT=${GCLOUD_PROJECT}"]
+# extra_envs = ["BUGZILLA_API_KEY", "VERTEXAI_PROJECT=${GCLOUD_PROJECT}"]
 
 # Env vars whose value is the stdout of a host command, run at launch without a shell
 # (no pipes/&&). Skipped if the command fails or prints nothing. Wins over extra_envs;

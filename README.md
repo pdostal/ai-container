@@ -12,7 +12,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
 - [Usage](#usage)
   - [Basic usage](#basic-usage)
   - [Initialize assistant state](#initialize-assistant-state)
-  - [Web mode](#web-mode)
+    - [Server mode](#server-mode)
   - [Custom mounts](#custom-mounts)
   - [Workspaces](#workspaces)
   - [Vertex AI](#vertex-ai)
@@ -106,7 +106,7 @@ uv run ai-container ...
 ai-container [WRAPPER OPTIONS] -- [TOOL ARGS]
 ```
 
-Everything before `--` configures the launcher itself (engine, mounts, web
+Everything before `--` configures the launcher itself (engine, mounts, server
 mode, ...). Everything after `--` is passed straight through to the entrypoint
 running inside the container (OpenCode, Claude Code, Codex, Copilot, or whatever
 `--entrypoint` points at).
@@ -223,31 +223,33 @@ ai-container --init
 The command creates any missing built-in assistant mount paths on the host,
 leaving every existing path untouched, then runs [`init.sh`](init.sh) inside
 the container. Its changes persist through the default mounts. Initialization
-installs the OpenQA and frontend design skills, Caveman, the RTK and Graphify
+installs the OpenQA, openSUSE packaging, and frontend design skills, Caveman, the RTK and Graphify
 assistant configuration, and SkillSpector's `/skillspector` command and
 `skillspector_scan` tool for OpenCode.
 
 `--init` can't be combined with an assistant shortcut, `--entrypoint`, `--shell`
-or `--web`.
+or `--server`.
 
-### Web mode
+### Server mode
 
-Run OpenCode as a background web server:
+Run OpenCode V2 as a background HTTP server:
 
 ```bash
-ai-container --web
+ai-container --server
 ```
 
-The container runs detached. The web interface URL, username, and password are
-printed on startup. Web mode only supports the bundled OpenCode entrypoint.
+The container runs detached. The server URL, username, and password are
+printed on startup. Server mode only supports the bundled OpenCode entrypoint.
+OpenCode V2 fixes the HTTP basic auth username to `opencode`; other values fail.
+Use `opencode --server URL` to connect a V2 client to this server.
 
-Additional web options:
+Additional server options:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--web-port PORT` | `4996` | Port to expose the web interface on |
-| `--web-username USER` | `coder` | HTTP basic auth username |
-| `--web-password PASS` | *(random)* | HTTP basic auth password |
+| `--server-port PORT` | `4996` | Port to expose the server on |
+| `--server-username USER` | `opencode` | HTTP basic auth username (only `opencode` is supported) |
+| `--server-password PASS` | *(random)* | HTTP basic auth password |
 
 ### Custom mounts
 
@@ -385,7 +387,7 @@ current directory is already running (podman/docker), it `exec`s into the
 newest one; otherwise it starts a new container running `/bin/bash`. Extra args
 go to bash. Containers started before this flag existed carry no label and
 aren't found; Apple `container` always starts a new one. Can't be combined with
-an assistant shortcut, `--entrypoint` or `--web`.
+  an assistant shortcut, `--entrypoint` or `--server`.
 
 ### Custom entrypoint
 
