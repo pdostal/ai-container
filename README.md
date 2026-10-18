@@ -13,6 +13,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Basic usage](#basic-usage)
   - [Initialize assistant state](#initialize-assistant-state)
     - [Server mode](#server-mode)
+  - [Multiple containers](#multiple-containers)
   - [Custom mounts](#custom-mounts)
   - [Workspaces](#workspaces)
   - [Vertex AI](#vertex-ai)
@@ -250,6 +251,23 @@ Additional server options:
 | `--server-port PORT` | `4996` | Port to expose the server on |
 | `--server-username USER` | `opencode` | HTTP basic auth username (only `opencode` is supported) |
 | `--server-password PASS` | *(random)* | HTTP basic auth password |
+
+### Multiple containers
+
+`~/.local/state/opencode` is shared between containers, and OpenCode V2 records
+its background service (URL and pid) in `service.json` there. Each container has
+its own network and PID namespace, so two containers keep replacing each other's
+service and both restart in a loop. Disable the background service once, on the
+host (this sets `"disabled": true` in
+`~/.config/opencode/service.json`):
+
+```bash
+opencode service set disabled true
+```
+
+Each container then runs its own in-process server. This also applies to an
+OpenCode on the host that uses the same config; undo with
+`opencode service unset disabled`.
 
 ### Custom mounts
 
