@@ -578,6 +578,7 @@ client config at `host.container.internal:<port>`.
 - **Perl**: perl, perltidy
 - **Linters**: shellcheck, markdownlint-cli
 - **Node.js**: npm, npx
+- **Browser automation**: headless Chromium, Playwright MCP (`playwright-mcp`, disabled by default in the OpenCode config)
 - **Security**: gpg2, openssh-clients, gitleaks, SkillSpector
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
