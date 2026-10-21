@@ -12,11 +12,11 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     php8-xmlreader php8-xmlwriter php8-sqlite php8-tokenizer php8-phar perl-Mojo-SQLite perl-Minion-Backend-SQLite skillspector \
     php-composer2 php8-smbclient php8-ldap php8-mysql php8-pgsql rtk openai-codex pi-coding-agent skillspector-mcp opentofu \
     perl-SQL-SplitStatement os-autoinst obs-service-verify_file obs-service-update_changelog obs-service-tar_scm obs-service-tar \
-		obs-service-source_validator obs-service-set_version obs-service-recompress obs-service-obs_scm-common obs-service-obs_scm \
-		obs-service-go_modules obs-service-format_spec_file obs-service-download_files obs-service-cargo obs-service-extract_file \
-		obs-service-download_assets obs-service-download_url obs-service-kiwi_label_helper obs-service-kiwi_metainfo_helper \
-		obs-service-node_modules obs-service-compose_kiwi_description obs-service-docker_label_helper obs-service-update_changelog \
-		obs-service-post_build_checks_containers
+    obs-service-source_validator obs-service-set_version obs-service-recompress obs-service-obs_scm-common obs-service-obs_scm \
+    obs-service-go_modules obs-service-format_spec_file obs-service-download_files obs-service-cargo obs-service-extract_file \
+    obs-service-download_assets obs-service-download_url obs-service-kiwi_label_helper obs-service-kiwi_metainfo_helper \
+    obs-service-node_modules obs-service-compose_kiwi_description obs-service-docker_label_helper obs-service-update_changelog \
+    obs-service-post_build_checks_containers helm
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
