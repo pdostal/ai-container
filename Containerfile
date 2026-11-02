@@ -3,7 +3,7 @@ ARG CODER_UID=1000
 ARG CODER_GID=1000
 RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo spec-cleaner rpmlint osc tilth bugwarden \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy python314-flake8 python314-yamllint kubernetes-client \
-    golangci-lint python313-gitlint aws-cli python314-pylint python314-pytest-pylint perl-Mojolicious perl-Test-Exception jq yq \
+    golangci-lint python313-gitlint aws-cli perl-Mojolicious perl-Test-Exception jq yq \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep npm26 \
     clang-tools ruby taplo php8 os-autoinst-distri-opensuse-deps nodejs26 bat knot knot-utils chromium \
     php8-ctype php8-curl php8-dom php8-fileinfo php8-gd skillspector skillspector-mcp os-autoinst-devel python314-ruff iputils \
