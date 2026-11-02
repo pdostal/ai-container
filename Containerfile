@@ -16,7 +16,19 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     obs-service-go_modules obs-service-format_spec_file obs-service-download_files obs-service-cargo obs-service-extract_file \
     obs-service-download_assets obs-service-download_url obs-service-kiwi_label_helper obs-service-kiwi_metainfo_helper \
     obs-service-node_modules obs-service-compose_kiwi_description obs-service-docker_label_helper obs-service-update_changelog \
-    obs-service-post_build_checks_containers helm
+    obs-service-post_build_checks_containers helm \
+    postgresql-server perl-App-cpanminus \
+    perl-DBIx-Class perl-DBIx-Class-DeploymentHandler perl-DBIx-Class-DynamicDefault \
+    perl-DBIx-Class-OptimisticLocking perl-DBIx-Class-Schema-Config \
+    perl-DBD-Pg perl-DateTime-Format-Pg perl-Mojo-Pg perl-Minion perl-SQL-Translator \
+    perl-Mojolicious-Plugin-AssetPack perl-Mojolicious-Plugin-OAuth2 \
+    perl-CSS-Minifier-XS perl-JavaScript-Minifier-XS perl-CSS-Sass \
+    perl-Mojo-RabbitMQ-Client perl-Net-OpenID-Consumer perl-CommonMark perl-CryptX \
+    perl-BSD-Resource perl-File-Copy-Recursive perl-Pod-POM perl-Sort-Versions \
+    perl-Time-modules perl-aliased perl-MCP perl-Devel-Cover-Report-Codecovbash \
+    perl-Selenium-Remote-Driver chromedriver perl-TAP-Harness-JUnit perl-Pod-Markdown \
+    perl-Test-Output perl-TAP-Harness-JUnit perl-Pod-Markdown perl-App-cpanminus \
+    perl-Devel-Cover-Report-Codecovbash
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
