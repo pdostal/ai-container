@@ -6,14 +6,17 @@ functions below -- deliberately not over-abstracted into a plugin system.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from .console import Reporter
 from .models import Engine
+from .server import CONTAINER_PORT
 
 
 class EngineNotFoundError(Exception):
@@ -156,6 +159,90 @@ def published_port(engine: Engine, name: str, port: int) -> int:
         return int(result.stdout.splitlines()[0].rsplit(":", 1)[1])
     except (ValueError, IndexError) as exc:
         raise EngineProbeError(f"Cannot determine published port for {name}.") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerInfo:
+    """One running container as shown by `ai-container list`."""
+
+    name: str
+    workdir: str
+    command: str
+    password: str | None
+    port: int | None
+
+
+_PS_FORMAT = (
+    '{{.Names}}\t{{.Label "ai-container.workdir"}}\t{{.Label "ai-container.opencode-server"}}'
+)
+_INSPECT_FORMAT = (
+    "{{.Name}}\t{{json .Config.Entrypoint}}\t{{json .Config.Cmd}}\t{{json .Config.Env}}"
+)
+
+
+def _json_list(raw: str) -> list[str]:
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return []
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def list_running(engine: Engine) -> list[ContainerInfo]:
+    """Running ai-container containers, sorted by workdir then name."""
+    if engine is Engine.CONTAINER:
+        return []
+    result = subprocess.run(
+        [engine.value, "ps", "--filter", f"label={WORKDIR_LABEL}", "--format", _PS_FORMAT],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        raise EngineProbeError(result.stderr.strip() or "`ps` failed")
+    rows: dict[str, tuple[str, bool]] = {}
+    for line in result.stdout.splitlines():
+        name, _, rest = line.partition("\t")
+        workdir, _, server_label = rest.partition("\t")
+        if name:
+            rows[name] = (workdir, server_label == "true")
+    if not rows:
+        return []
+
+    inspected = subprocess.run(
+        [engine.value, "inspect", "--format", _INSPECT_FORMAT, *rows],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    commands: dict[str, tuple[str, str | None]] = {}
+    if inspected.returncode == 0:
+        for line in inspected.stdout.splitlines():
+            name, _, rest = line.partition("\t")
+            entrypoint, _, rest = rest.partition("\t")
+            cmd, _, env = rest.partition("\t")
+            args = [*_json_list(entrypoint), *_json_list(cmd)]
+            password = next(
+                (
+                    item.partition("=")[2]
+                    for item in _json_list(env)
+                    if item.startswith("OPENCODE_PASSWORD=")
+                ),
+                None,
+            )
+            commands[name.removeprefix("/")] = (" ".join(args), password)
+
+    infos = []
+    for name, (workdir, is_server) in rows.items():
+        command, password = commands.get(name, ("", None))
+        port = None
+        if is_server:
+            try:
+                port = published_port(engine, name, CONTAINER_PORT)
+            except EngineProbeError:
+                port = None
+        infos.append(ContainerInfo(name, workdir, command, password, port))
+    return sorted(infos, key=lambda info: (info.workdir, info.name))
 
 
 def debug_args(engine: Engine) -> list[str]:

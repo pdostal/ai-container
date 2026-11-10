@@ -1588,3 +1588,198 @@ def test_reuse_rejects_different_requested_port(
     result = runner.invoke(cli_mod.app, ["--attach", "--server-port", "5124"])
     assert result.exit_code == 1
     assert "uses port 5123" in result.output
+
+
+def _register_list(fp: FakeProcess) -> None:
+    fp.register(
+        [
+            "podman",
+            "ps",
+            "--filter",
+            f"label={engine_ops.WORKDIR_LABEL}",
+            "--format",
+            engine_ops._PS_FORMAT,
+        ],
+        stdout="ai-b\t/home/a\ttrue\nai-a\t/home/z\tfalse\n",
+    )
+    fp.register(
+        ["podman", "inspect", "--format", engine_ops._INSPECT_FORMAT, "ai-b", "ai-a"],
+        stdout=(
+            '/ai-b\t["/usr/local/bin/opencode-launch"]\t["--continue"]'
+            '\t["OPENCODE_PASSWORD=secret"]\n'
+            '/ai-a\t["/bin/bash"]\tnull\t["HOME=/home/coder"]\n'
+        ),
+    )
+    fp.register(["podman", "port", "ai-b", "4996/tcp"], stdout="0.0.0.0:4996\n")
+
+
+@pytest.mark.parametrize("flags", [["list"], ["--list"]])
+def test_list_prints_containers_sorted_by_workdir(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    fp: FakeProcess,
+    flags: list[str],
+) -> None:
+    _register_list(fp)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", *flags])
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        "ai-b - /home/a - /usr/local/bin/opencode-launch --continue - 4996 - ****",
+        "ai-a - /home/z - /bin/bash - - - -",
+    ]
+
+
+def test_list_show_secrets_reveals_password(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, fp: FakeProcess
+) -> None:
+    _register_list(fp)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "list", "--show-secrets"])
+    assert result.exit_code == 0, result.output
+    assert " - 4996 - secret" in result.output
+    assert "****" not in result.output
+
+
+def test_list_empty(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, fp: FakeProcess
+) -> None:
+    fp.register(
+        [
+            "podman",
+            "ps",
+            "--filter",
+            f"label={engine_ops.WORKDIR_LABEL}",
+            "--format",
+            engine_ops._PS_FORMAT,
+        ],
+        stdout="",
+    )
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "list"])
+    assert result.exit_code == 0, result.output
+    assert "No running ai-container containers." in result.output
+
+
+def test_list_on_container_engine_message(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "container", "list"])
+    assert result.exit_code == 0, result.output
+    assert "not supported on the Apple `container` engine" in result.output
+
+
+def test_show_secrets_requires_list(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--show-secrets"])
+    assert result.exit_code == 1
+    assert "--show-secrets requires --list" in result.output
+
+
+def test_init_subcommand_uses_init_entrypoint(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "init"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--entrypoint") + 1] == "/usr/local/bin/init.sh"
+
+
+def test_server_subcommand_uses_detached_server(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "server", "--server-port", "5050"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "-d" in argv
+    assert "0.0.0.0:5050:4996" in argv
+
+
+@pytest.mark.parametrize("flag", ["--opencode", "--claude"])
+def test_continue_subcommand_forwards_flag(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    flag: str,
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "continue", flag])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[-1] == "--continue"
+
+
+def test_continue_subcommand_rejects_other_assistants(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["continue", "--codex"])
+    assert result.exit_code == 1
+    assert "continue is only supported for OpenCode and Claude Code" in result.output
+
+
+def test_continue_subcommand_rejects_server_mode(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["continue", "--server"])
+    assert result.exit_code == 1
+    assert "continue cannot be combined with server mode" in result.output
+
+
+def test_attach_subcommand_requires_server(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["attach"])
+    assert result.exit_code == 1
+    assert "No OpenCode server" in result.output
+
+
+def test_help_subcommand_prints_help() -> None:
+    result = runner.invoke(cli_mod.app, ["help"])
+    assert result.exit_code == 0
+    assert "tool_args" in result.output
+
+
+def test_server_start_line(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+) -> None:
+    fp.register(["hostname", "-I"], stdout="192.168.1.2\n")
+    fp.register(
+        [
+            "podman",
+            "ps",
+            "--filter",
+            f"label={engine_ops.WORKDIR_LABEL}={workdir}",
+            "--filter",
+            "label=ai-container.opencode-server=true",
+            "--format",
+            "{{.Names}}",
+        ],
+        stdout="",
+    )
+    for arg in ("--git-common-dir", "--git-dir"):
+        fp.register(
+            ["git", "-C", str(workdir), "rev-parse", "--path-format=absolute", arg], stdout=""
+        )
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--server", "--server-port", "5050"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Starting server - Creds: opencode:" in result.output
+    assert "Server: http://localhost:5050 http://192.168.1.2:5050" in result.output
+
+
+def test_server_attach_line_has_no_creds(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+) -> None:
+    _register_server(fp, workdir)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--attach"])
+    assert result.exit_code == 0, result.output
+    assert "Attaching to server - Server: http://localhost:5123" in result.output
+    assert "Creds:" not in result.output

@@ -83,6 +83,7 @@ BUNDLED_ASSISTANT_ENTRYPOINTS = (
     DEFAULT_CODEX_ENTRYPOINT,
     DEFAULT_COPILOT_ENTRYPOINT,
 )
+SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "help"})
 
 
 class CliError(Exception):
@@ -97,6 +98,7 @@ def _version_callback(value: bool) -> None:
 
 @app.command()
 def main(
+    ctx: typer.Context,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -146,6 +148,17 @@ def main(
     ] = False,
     server_mode: Annotated[
         bool, typer.Option("--server", help="Run OpenCode as a background HTTP server.")
+    ] = False,
+    list_mode: Annotated[
+        bool,
+        typer.Option(
+            "--list",
+            help="List running ai-container containers (name, workdir, command, port, password).",
+        ),
+    ] = False,
+    show_secrets: Annotated[
+        bool,
+        typer.Option("--show-secrets", help="With --list, print the full server password."),
     ] = False,
     server_port: Annotated[
         int | None,
@@ -290,9 +303,13 @@ def main(
 
         ai-container
 
-        ai-container --init
+        ai-container init
 
-        ai-container --server --server-port 5000
+        ai-container server --server-port 5000
+
+        ai-container continue
+
+        ai-container list
 
         ai-container --claude --resume
 
@@ -306,14 +323,33 @@ def main(
 
         ai-container --claude -- --debug
 
-    [dim]The last example forwards a literal "--debug" to Claude Code itself,
-    rather than turning on this launcher's own --debug output -- needed only
-    because "--debug" collides with one of ai-container's own flags.[/dim]
+    [dim]Subcommands (init, server, attach, continue, list, help) are sugar for
+    the matching flag; the flag spellings keep working. The last example forwards
+    a literal "--debug" to Claude Code itself, rather than turning on this
+    launcher's own --debug output -- needed only because "--debug" collides with
+    one of ai-container's own flags.[/dim]
     """
     reporter = Reporter(debug=debug)
     host_platform = platform.system()
     host_home = Path.home()
     tool_args = list(tool_args or [])
+    continue_mode = False
+    if tool_args and tool_args[0] in SUBCOMMANDS:
+        subcommand = tool_args.pop(0)
+        if subcommand == "help":
+            typer.echo(ctx.get_help())
+            raise typer.Exit()
+        if subcommand == "init":
+            init_mode = True
+        elif subcommand == "server":
+            server_mode = True
+        elif subcommand == "attach":
+            attach = True
+        elif subcommand == "continue":
+            continue_mode = True
+            tool_args.insert(0, "--continue")
+        elif subcommand == "list":
+            list_mode = True
 
     try:
         for argument in tool_args:
@@ -340,6 +376,16 @@ def main(
             init_mode=init_mode,
             server=server_mode,
         )
+        if continue_mode and Path(resolved_entrypoint).name not in {
+            "opencode",
+            "opencode2",
+            "claude",
+        }:
+            raise CliError("continue is only supported for OpenCode and Claude Code.")
+        if continue_mode and server_mode:
+            raise CliError("continue cannot be combined with server mode.")
+        if show_secrets and not list_mode:
+            raise CliError("--show-secrets requires --list.")
         if attach is not None and (shell or init_mode or claude or codex or copilot):
             raise CliError("--attach/--no-attach can only use OpenCode.")
         if attach is True and server_mode:
@@ -352,6 +398,9 @@ def main(
             host_platform=host_platform,
         )
         engine_ops.ensure_available(selected_engine)
+        if list_mode:
+            _list_containers(selected_engine, show_secrets=show_secrets)
+            raise typer.Exit()
         docker_rootless = selected_engine is Engine.DOCKER and engine_ops.docker_is_rootless()
         if microvm and selected_engine is not Engine.PODMAN:
             raise CliError(
@@ -486,8 +535,9 @@ def main(
                     f"Existing server uses port {port}, not {server_port}; "
                     "use --no-attach for a new server."
                 )
-            reporter.ok(
-                f"OpenCode server: http://{server._host_ip(host_platform)}:{port} ({existing})"
+            reporter.note(
+                f"Attaching to server - Server: "
+                f"{' '.join(server.urls(server._host_ip(host_platform), port))}"
             )
             if server_mode:
                 raise typer.Exit(0)
@@ -520,10 +570,11 @@ def main(
             raise typer.Exit(run(exec_argv, terminal_title=terminal_title))
         if attach is True:
             raise CliError(
-                "No OpenCode server running for this directory; start one with --server."
+                "No OpenCode server running for this directory; "
+                "start one with `ai-container server`."
             )
         if network_server:
-            server_port = server.port_for(cwd, server_port)
+            server_port = server.port_for(server_port)
             server_password = server_password or server.configured_password(host_home)
     except (ValueError, OSError, engine_ops.EngineProbeError, CliError) as exc:
         reporter.fail(str(exc))
@@ -664,7 +715,11 @@ def main(
             password=server_password,
             tool_args=tool_args if server_mode else [],
             host_platform=host_platform,
-            reporter=reporter,
+        )
+        reporter.note(
+            f"{'Starting server' if server_mode else 'Starting server + TUI'} - "
+            f"Creds: {server_config.username}:{server_config.password} - "
+            f"Server: {' '.join(server_config.urls)}"
         )
         args.extend(["--label", f"{server.SERVICE_LABEL}=true", *server_config.args[1:]])
         if server_mode:
@@ -721,6 +776,25 @@ def main(
     if debug_runtime:
         reporter.step(f"Running: {_safe_command(argv)}")
     raise typer.Exit(run(argv, terminal_title=terminal_title))
+
+
+def _list_containers(engine: Engine, *, show_secrets: bool) -> None:
+    """Print one line per running container: name, workdir, command, port, password."""
+    if engine is Engine.CONTAINER:
+        typer.echo(
+            "Listing is not supported on the Apple `container` engine; use podman or docker."
+        )
+        return
+    infos = engine_ops.list_running(engine)
+    if not infos:
+        typer.echo("No running ai-container containers.")
+        return
+    for info in infos:
+        port = "-" if info.port is None else str(info.port)
+        password = "-" if info.password is None else ("****" if not show_secrets else info.password)
+        typer.echo(
+            f"{info.name} - {info.workdir or '-'} - {info.command or '-'} - {port} - {password}"
+        )
 
 
 def _safe_command(argv: list[str]) -> str:

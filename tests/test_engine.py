@@ -230,3 +230,47 @@ def test_published_port_rejects_engine_failure(fp: FakeProcess) -> None:
     fp.register(["podman", "port", "ai-server", "4996/tcp"], stdout="0.0.0.0:5123\n", returncode=1)
     with pytest.raises(engine.EngineProbeError, match="published port"):
         engine.published_port(Engine.PODMAN, "ai-server", 4996)
+
+
+def _list_ps() -> list[str]:
+    return [
+        "podman",
+        "ps",
+        "--filter",
+        f"label={engine.WORKDIR_LABEL}",
+        "--format",
+        engine._PS_FORMAT,
+    ]
+
+
+def test_list_running_parses_containers(fp: FakeProcess) -> None:
+    fp.register(_list_ps(), stdout="ai-b\t/home/a\ttrue\nai-a\t/home/z\tfalse\n")
+    fp.register(
+        ["podman", "inspect", "--format", engine._INSPECT_FORMAT, "ai-b", "ai-a"],
+        stdout=(
+            '/ai-b\t["/usr/local/bin/opencode-launch"]\t["--continue"]'
+            '\t["OPENCODE_PASSWORD=secret"]\n'
+            '/ai-a\t["/bin/bash"]\tnull\t["HOME=/home/coder"]\n'
+        ),
+    )
+    fp.register(["podman", "port", "ai-b", "4996/tcp"], stdout="0.0.0.0:4996\n")
+    infos = engine.list_running(Engine.PODMAN)
+    assert [(i.name, i.workdir, i.command, i.password, i.port) for i in infos] == [
+        ("ai-b", "/home/a", "/usr/local/bin/opencode-launch --continue", "secret", 4996),
+        ("ai-a", "/home/z", "/bin/bash", None, None),
+    ]
+
+
+def test_list_running_empty(fp: FakeProcess) -> None:
+    fp.register(_list_ps(), stdout="")
+    assert engine.list_running(Engine.PODMAN) == []
+
+
+def test_list_running_engine_error(fp: FakeProcess) -> None:
+    fp.register(_list_ps(), returncode=1, stderr="boom")
+    with pytest.raises(engine.EngineProbeError, match="boom"):
+        engine.list_running(Engine.PODMAN)
+
+
+def test_list_running_unsupported_on_container() -> None:
+    assert engine.list_running(Engine.CONTAINER) == []

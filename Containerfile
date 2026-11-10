@@ -56,6 +56,7 @@ RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
 RUN chown -R coder:$(id -gn coder) /home/coder
 RUN export GOBIN=/usr/local/bin && \
     go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
+RUN rm -rf /tmp/opencode /tmp/.bun-0-*.so /tmp/node-compile-cache
 WORKDIR /home/coder
 USER coder
 ENV PATH="/home/coder/.local/bin:${PATH}"

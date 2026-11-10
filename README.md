@@ -13,6 +13,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Basic usage](#basic-usage)
   - [Initialize assistant state](#initialize-assistant-state)
     - [Server mode](#server-mode)
+  - [List running containers](#list-running-containers)
   - [Multiple containers](#multiple-containers)
   - [Custom mounts](#custom-mounts)
   - [Workspaces](#workspaces)
@@ -124,7 +125,7 @@ entrypoint automatically, no `--` needed:
 ```bash
 ai-container
 # initialize persistent skills and configuration
-ai-container --init
+ai-container init
 ai-container --claude
 ai-container --codex
 ai-container --copilot
@@ -138,6 +139,23 @@ ai-container --extra-env MY_VARIABLE
 # set a variable, expanding host variables
 ai-container --extra-env 'X=${HOME}/y'
 ```
+
+Common modes are also available as subcommands, which are sugar for the matching
+flag (the flag spellings keep working):
+
+| Subcommand | Same as | Purpose |
+| --- | --- | --- |
+| `ai-container init` | `--init` | Initialize host-persisted assistant state. |
+| `ai-container server` | `--server` | Run OpenCode as a detached HTTP server. |
+| `ai-container attach` | `--attach` | Require an existing server for this directory. |
+| `ai-container continue` | forwarding `--continue` | Resume the assistant's last session. |
+| `ai-container list` | `--list` | List running containers. |
+| `ai-container help` | `-h`/`--help` | Show the launcher help. |
+
+Because subcommands are read from the first positional token, a literal
+`init`, `server`, `attach`, `continue`, `list`, or `help` cannot be forwarded
+to the entrypoint. Use `--entrypoint opencode help` when you need OpenCode's
+own help.
 
 This is a deliberate (and arguably improved) departure from the old bash
 script's parsing, which stopped recognizing its own flags entirely as soon as
@@ -219,7 +237,7 @@ Run initialization once after building the image, and again whenever you want
 to update the installed skills and generated assistant configuration:
 
 ```bash
-ai-container --init
+ai-container init
 ```
 
 The command creates any missing built-in assistant mount paths on the host,
@@ -236,11 +254,20 @@ or `--server`.
 
 OpenCode starts a network server by default, including when you use the TUI.
 The server binds to `0.0.0.0` inside the container and is published on all host
-interfaces. The launcher probes ports `5000-5499`, starting at a hash of the
-full canonical working-directory path. Occupied ports are skipped. The URL,
-username, and password are printed when a new server starts.
-Port probing is not a reservation: simultaneous starts can still race. Retry
-the launch if the engine reports that a port became occupied.
+interfaces. The container port is `4996`, and the launcher publishes it on host
+port `4996` too, so inside and outside match. If `4996` is occupied, it walks up
+to `5499`. The launcher prints one status line when it starts or attaches:
+
+```text
+* Starting server + TUI - Creds: opencode:PASSWORD - Server: http://localhost:4996 http://192.168.1.2:4996 http://HOSTNAME:4996
+* Attaching to server - Server: http://localhost:4996 http://192.168.1.2:4996 http://HOSTNAME:4996
+* Starting server - Creds: opencode:PASSWORD - Server: ...
+```
+
+Credentials are only printed when a new server starts; an attach reuses the
+existing container's password. Port probing is not a reservation: simultaneous
+starts can still race. Retry the launch if the engine reports that a port became
+occupied.
 
 On podman/docker, another launch from the same directory attaches to its
 existing server. Only containers with the OpenCode server label are reused;
@@ -250,7 +277,7 @@ to apply changed launch settings in a fresh container.
 
 ```bash
 ai-container                    # start a server and TUI, or attach to this directory's server
-ai-container --attach           # require an existing server; fail if none exists
+ai-container attach             # require an existing server; fail if none exists
 ai-container --no-attach        # fresh server and TUI on an available port
 ```
 
@@ -258,7 +285,7 @@ A foreground container ends when its initial TUI exits. Clients attached to
 that server then disconnect. For a server that survives TUI exit, use:
 
 ```bash
-ai-container --server
+ai-container server
 ```
 
 The container runs detached. Repeating `--server` reuses an existing server for
@@ -271,8 +298,9 @@ OpenCode V2 fixes the HTTP basic auth username to `opencode`; other values fail.
 The default password comes from the host's `~/.config/opencode/service.json`,
 or is generated for the new container when absent. `--password` overrides it.
 Auto-attach inherits the existing container's password; an explicit password
-override must match that server. `--init` configures the shared service hostname
-to `0.0.0.0`; the launcher also passes the bind address explicitly.
+override must match that server. `ai-container init` configures the shared
+service hostname to `0.0.0.0`; the launcher also passes the bind address
+explicitly.
 
 Check from the host, or another container that can reach the host IP:
 
@@ -297,11 +325,26 @@ Additional server options:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--server-port PORT` | *(free port in `5000-5499`)* | Published host port; container port stays `4996` |
+| `--server-port PORT` | `4996`, then next free | Published host port; container port stays `4996` |
 | `--server-username USER` | `opencode` | HTTP basic auth username (only `opencode` is supported) |
 | `--password PASS`, `--server-password PASS` | *(service config, otherwise random)* | HTTP basic auth password |
 | `--attach` | *(automatic reuse)* | Require a server for this directory |
 | `--no-attach` | *(off)* | Skip reuse; start a fresh network server |
+
+### List running containers
+
+`ai-container list` (also `--list`) prints one line per running container
+started by the launcher:
+
+```text
+ai-x7q - /home/coder/project - /usr/local/bin/opencode-launch --continue - 4996 - ****
+```
+
+Fields are container name, workdir, executed command (entrypoint plus args),
+published host port, and server password. Unknown values are shown as `-`.
+Passwords are masked; add `--show-secrets` to print the real value. The list is
+sorted by workdir. Apple's `container` engine has no label filter, so `list`
+reports that it is unsupported there.
 
 ### Multiple containers
 
@@ -666,7 +709,7 @@ client config at `host.container.internal:<port>`.
 
 ## Agent Skills
 
-`ai-container --init` installs the bundled skills into the host-mounted
+`ai-container init` installs the bundled skills into the host-mounted
 `~/.agents` directory. Re-run it to pick up upstream changes without rebuilding
 the image.
 

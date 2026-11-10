@@ -7,7 +7,6 @@ import pytest
 from pytest_subprocess import FakeProcess
 
 from ai_container import server
-from ai_container.console import Reporter
 
 
 def test_configure_generates_password_when_unset(fp: FakeProcess) -> None:
@@ -18,11 +17,13 @@ def test_configure_generates_password_when_unset(fp: FakeProcess) -> None:
         password=None,
         tool_args=["--resume"],
         host_platform="Linux",
-        reporter=Reporter(),
     )
     assert len(result.password) == 20
     assert "OPENCODE_PASSWORD=" + result.password in result.args
     assert result.tool_args == ["serve", "--hostname", "0.0.0.0", "--port", "4996", "--resume"]
+    assert result.username == "opencode"
+    assert "http://localhost:4996" in result.urls
+    assert "http://10.0.0.5:4996" in result.urls
 
 
 def test_configure_keeps_explicit_password(fp: FakeProcess) -> None:
@@ -33,7 +34,6 @@ def test_configure_keeps_explicit_password(fp: FakeProcess) -> None:
         password="hunter2",
         tool_args=[],
         host_platform="Linux",
-        reporter=Reporter(),
     )
     assert result.password == "hunter2"
     assert "OPENCODE_PASSWORD=hunter2" in result.args
@@ -56,28 +56,50 @@ def test_host_ip_darwin_falls_back_to_localhost(fp: FakeProcess) -> None:
     assert server._host_ip("Darwin") == "localhost"
 
 
-def test_port_uses_canonical_full_path_and_skips_occupied_port(tmp_path: Path) -> None:
-    directory = tmp_path / "project"
-    directory.mkdir()
-    alias = tmp_path / "alias"
-    alias.symlink_to(directory, target_is_directory=True)
-    port = server.port_for(directory)
-    assert 5000 <= port <= 5499
-    assert server.port_for(alias) == port
-    with socket.socket() as listener:
-        listener.bind(("0.0.0.0", port))
-        assert server.port_for(directory) != port
-        with pytest.raises(ValueError, match="unavailable"):
-            server.port_for(directory, port)
+class _FakeListener:
+    def __init__(self, busy: set[int]) -> None:
+        self.busy = busy
+
+    def __enter__(self) -> _FakeListener:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def bind(self, address: tuple[str, int]) -> None:
+        if address[1] in self.busy:
+            raise OSError("busy")
 
 
-def test_port_range_exhaustion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_port_defaults_to_container_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: _FakeListener(set()))
+    assert server.port_for() == server.CONTAINER_PORT
+
+
+def test_port_skips_occupied_container_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    busy = {server.CONTAINER_PORT}
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: _FakeListener(busy))
+    assert server.port_for() == server.CONTAINER_PORT + 1
+    with pytest.raises(ValueError, match="unavailable"):
+        server.port_for(server.CONTAINER_PORT)
+
+
+def test_urls_are_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(socket, "gethostname", lambda: "localhost")
+    assert server.urls("localhost", 4996) == ["http://localhost:4996"]
+    assert server.urls("10.0.0.5", 5000) == [
+        "http://localhost:5000",
+        "http://10.0.0.5:5000",
+    ]
+
+
+def test_port_range_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:
     def unavailable(*args: object, **kwargs: object) -> socket.socket:
         raise OSError("busy")
 
     monkeypatch.setattr(socket, "socket", unavailable)
     with pytest.raises(ValueError, match="No free port"):
-        server.port_for(tmp_path)
+        server.port_for()
 
 
 def test_password_from_config_and_invalid_config(tmp_path: Path) -> None:

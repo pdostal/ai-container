@@ -36,6 +36,9 @@ class Reporter:
     def step(self, message: str) -> None:
         self.console.print(f"[bold cyan]\u25b6[/bold cyan] {message}")
 
+    def note(self, message: str) -> None:
+        self.console.print(f"[bold cyan]*[/bold cyan] {message}", soft_wrap=True)
+
     def detail(self, message: str) -> None:
         self.console.print(f"  [dim]\u2192[/dim] {message}")
 
