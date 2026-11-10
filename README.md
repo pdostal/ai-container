@@ -150,12 +150,13 @@ flag (the flag spellings keep working):
 | `ai-container attach` | `--attach` | Require an existing server for this directory. |
 | `ai-container continue` | forwarding `--continue` | Resume the assistant's last session. |
 | `ai-container list` | `--list` | List running containers. |
+| `ai-container shell` | `--shell` | Open a bash shell, attaching to this directory's container if one runs. |
 | `ai-container help` | `-h`/`--help` | Show the launcher help. |
 
 Because subcommands are read from the first positional token, a literal
-`init`, `server`, `attach`, `continue`, `list`, or `help` cannot be forwarded
-to the entrypoint. Use `--entrypoint opencode help` when you need OpenCode's
-own help.
+`init`, `server`, `attach`, `continue`, `list`, `shell`, or `help` cannot be
+forwarded to the entrypoint. Use `--entrypoint opencode help` when you need
+OpenCode's own help.
 
 This is a deliberate (and arguably improved) departure from the old bash
 script's parsing, which stopped recognizing its own flags entirely as soon as
@@ -497,12 +498,12 @@ extra_network_args = [
 
 ### Shell
 
-`ai-container --shell` opens a bash shell. If a container started from the
-current directory is already running (podman/docker), it `exec`s into the
-newest one; otherwise it starts a new container running `/bin/bash`. Extra args
-go to bash. Containers started before this flag existed carry no label and
+`ai-container shell` (or `--shell`) opens a bash shell. If a container started
+from the current directory is already running (podman/docker), it `exec`s into
+the newest one; otherwise it starts a new container running `/bin/bash`. Extra
+args go to bash. Containers started before this flag existed carry no label and
 aren't found; Apple `container` always starts a new one. Can't be combined with
-  an assistant shortcut, `--entrypoint` or `--server`.
+an assistant shortcut, `--entrypoint` or `--server`.
 
 ### Terminal integration
 

@@ -1472,6 +1472,21 @@ def test_shell_execs_into_running_container(
     assert captured_run == [["podman", "exec", "-i", "ai-abc", "/bin/bash"]]
 
 
+def test_shell_subcommand_starts_new_container(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(engine_ops, "find_running", lambda *a: None)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "shell", "-c", "echo hi"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--entrypoint") + 1] == "/bin/bash"
+    assert argv[-2:] == ["-c", "echo hi"]
+
+
 def _register_server(fp: FakeProcess, cwd: Path) -> None:
     fp.register(
         [

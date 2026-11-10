@@ -83,7 +83,7 @@ BUNDLED_ASSISTANT_ENTRYPOINTS = (
     DEFAULT_CODEX_ENTRYPOINT,
     DEFAULT_COPILOT_ENTRYPOINT,
 )
-SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "help"})
+SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "shell", "help"})
 
 
 class CliError(Exception):
@@ -311,6 +311,8 @@ def main(
 
         ai-container list
 
+        ai-container shell
+
         ai-container --claude --resume
 
         ai-container --codex
@@ -323,11 +325,11 @@ def main(
 
         ai-container --claude -- --debug
 
-    [dim]Subcommands (init, server, attach, continue, list, help) are sugar for
-    the matching flag; the flag spellings keep working. The last example forwards
-    a literal "--debug" to Claude Code itself, rather than turning on this
-    launcher's own --debug output -- needed only because "--debug" collides with
-    one of ai-container's own flags.[/dim]
+    [dim]Subcommands (init, server, attach, continue, list, shell, help) are sugar
+    for the matching flag; the flag spellings keep working. The last example
+    forwards a literal "--debug" to Claude Code itself, rather than turning on
+    this launcher's own --debug output -- needed only because "--debug" collides
+    with one of ai-container's own flags.[/dim]
     """
     reporter = Reporter(debug=debug)
     host_platform = platform.system()
@@ -350,6 +352,8 @@ def main(
             tool_args.insert(0, "--continue")
         elif subcommand == "list":
             list_mode = True
+        elif subcommand == "shell":
+            shell = True
 
     try:
         for argument in tool_args:
