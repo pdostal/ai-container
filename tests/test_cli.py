@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import os
-import shlex
 import socket
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pytest_subprocess import FakeProcess
 from typer.testing import CliRunner
 
-from ai_container import __version__, defaults, git_utils, selinux
+from ai_container import __version__, defaults, git_utils, selinux, terminal
 from ai_container import cli as cli_mod
 from ai_container import engine as engine_ops
 
@@ -22,7 +22,7 @@ def captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Replace the final `podman run ...` invocation with a spy."""
     calls: list[list[str]] = []
 
-    def fake_run(argv: list[str]) -> int:
+    def fake_run(argv: list[str], *, terminal_title: str | None = None) -> int:
         calls.append(argv)
         return 0
 
@@ -473,14 +473,14 @@ def test_default_entrypoint_is_opencode(
 ) -> None:
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
-    assert "/usr/local/bin/opencode" in argv
+    assert "/usr/local/bin/opencode-launch" in argv
 
 
 @pytest.mark.parametrize(
     ("flag", "entrypoint"),
     [
         ("--claude", "/home/coder/.local/bin/claude"),
-        ("--opencode", "/usr/local/bin/opencode"),
+        ("--opencode", "/usr/local/bin/opencode-launch"),
         ("--codex", "/usr/bin/codex"),
         ("--copilot", "/usr/local/bin/copilot"),
     ],
@@ -595,7 +595,18 @@ def test_no_tool_mounts_or_envs_without_config(
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
     assert not any("/.config/gh" in a for a in argv)
-    assert not any(a.startswith(("BUGZILLA_API_KEY=", "OPENCODE_")) for a in argv)
+    assert not any(a.startswith("BUGZILLA_API_KEY=") for a in argv)
+    assert any(a.startswith("OPENCODE_PASSWORD=") for a in argv)
+
+
+def test_container_gets_private_xdg_state_home(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    name = argv[argv.index("--name") + 1]
+    assert f"XDG_STATE_HOME=/home/coder/.local/state/ai-container/{name}" in argv
 
 
 def _make_assistant_paths(home: Path) -> None:
@@ -912,19 +923,27 @@ def test_cli_mount_wins_over_config_mount_for_same_target(
 
 
 def test_server_mode_sets_detach_and_port(
-    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(terminal, "should_allocate_tty", lambda **_kwargs: True)
     result = runner.invoke(
         cli_mod.app, ["--runtime", "podman", "--server", "--server-port", "5050"]
     )
     assert result.exit_code == 0, result.output
     (argv,) = captured_run
     assert "-d" in argv
-    assert "5050:5050" in argv
+    assert "0.0.0.0:5050:4996" in argv
+    assert "--rm" in argv
     assert "serve" in argv
     assert "--hostname" in argv
     assert any(a.startswith("OPENCODE_PASSWORD=") for a in argv)
     assert not any(a.startswith("OPENCODE_SERVER_USERNAME=") for a in argv)
+    assert "-it" not in argv
+    assert not any("/run/host-terminfo" in arg for arg in argv)
 
 
 @pytest.mark.parametrize("flag", ["--web", "--web-port", "--web-username", "--web-password"])
@@ -962,7 +981,9 @@ def test_debug_runtime_flag_adds_engine_debug_output_only(
         cli_mod.app, ["--runtime", "podman", "--debug-runtime", "--", "--resume"]
     )
     (argv,) = captured_run
-    assert "".join(("Running: " + shlex.join(argv)).split()) in "".join(result.output.split())
+    assert "".join(("Running: " + cli_mod._safe_command(argv)).split()) in "".join(
+        result.output.split()
+    )
     assert argv[1] == "--log-level=debug"
     tail = argv[argv.index("localhost/ai") + 1 :]
     assert tail == ["--resume"]  # opencode's own debug args are NOT added
@@ -1130,6 +1151,44 @@ def test_debug_does_not_prepend_opencode_flags_for_other_entrypoints(
 def test_no_tty_runs_with_dash_i_only(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert "-i" in argv
+    assert "-it" not in argv
+
+
+def test_interactive_terminal_is_forwarded(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    terminfo = tmp_path / "terminfo"
+    terminfo.mkdir()
+    monkeypatch.setattr(terminal, "should_allocate_tty", lambda **_kwargs: True)
+    monkeypatch.setattr(cli_mod, "HOST_TERMINFO", terminfo)
+    monkeypatch.setenv("TERM", "xterm-kitty")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert "-it" in argv
+    assert "TERM=xterm-kitty" in argv
+    assert "COLORTERM=truecolor" in argv
+    assert "TERMINFO_DIRS=/run/host-terminfo:" in argv
+    assert f"--mount=type=bind,source={terminfo},target=/run/host-terminfo,readonly" in argv
+
+
+def test_dumb_terminal_runs_without_tty(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(terminal, "should_allocate_tty", lambda **_kwargs: False)
+    monkeypatch.setenv("TERM", "dumb")
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
     (argv,) = captured_run
     assert "-i" in argv
@@ -1411,3 +1470,121 @@ def test_shell_execs_into_running_container(
     result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--shell"])
     assert result.exit_code == 0, result.output
     assert captured_run == [["podman", "exec", "-i", "ai-abc", "/bin/bash"]]
+
+
+def _register_server(fp: FakeProcess, cwd: Path) -> None:
+    fp.register(
+        [
+            "podman",
+            "ps",
+            "--filter",
+            f"label={engine_ops.WORKDIR_LABEL}={cwd}",
+            "--filter",
+            "label=ai-container.opencode-server=true",
+            "--format",
+            "{{.Names}}",
+        ],
+        stdout="ai-service\n",
+    )
+    fp.register(["podman", "port", "ai-service", "4996/tcp"], stdout="0.0.0.0:5123\n")
+    fp.register(["hostname", "-I"], stdout="192.168.1.2\n")
+
+
+@pytest.mark.parametrize("flags", [[], ["--attach"], ["--server"]])
+def test_reuses_only_directory_server(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+    flags: list[str],
+) -> None:
+    _register_server(fp, workdir)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", *flags])
+    assert result.exit_code == 0, result.output
+    assert "192.168.1.2:5123" in result.output
+    if flags == ["--server"]:
+        assert not captured_run
+    else:
+        (argv,) = captured_run
+        assert argv[:2] == ["podman", "exec"]
+        assert "ai-service" in argv
+        assert argv[-1] == "/usr/local/bin/opencode-launch"
+        assert "AI_CONTAINER_OPENCODE_ATTACH=true" in argv
+        assert "AI_CONTAINER_OPENCODE_PORT=4996" in argv
+        assert argv[argv.index("-w") + 1] == str(workdir)
+
+
+def test_attach_password_override(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+) -> None:
+    _register_server(fp, workdir)
+    result = runner.invoke(cli_mod.app, ["--attach", "--password", "override", "-c"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "OPENCODE_PASSWORD=override" in argv
+    assert argv[-1] == "-c"
+
+
+def test_attach_missing_server_errors(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--attach"])
+    assert result.exit_code == 1
+    assert "No OpenCode server" in result.output
+    assert not captured_run
+
+
+def test_no_attach_starts_network_server_and_uses_config_password(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+) -> None:
+    config = isolated_home / ".config/opencode/service.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"password": "saved-password"}')
+    result = runner.invoke(cli_mod.app, ["--no-attach"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "OPENCODE_PASSWORD=saved-password" in argv
+    assert "/usr/local/bin/opencode-launch" in argv
+    assert "-p" in argv
+    assert "--rm" in argv
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--attach", "--claude"],
+        ["--attach", "--server"],
+        ["--no-attach", "--shell"],
+        ["--server-port", "65536"],
+    ],
+)
+def test_invalid_service_combinations(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    flags: list[str],
+) -> None:
+    assert runner.invoke(cli_mod.app, flags).exit_code != 0
+
+
+def test_reuse_rejects_different_requested_port(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    fp: FakeProcess,
+) -> None:
+    _register_server(fp, workdir)
+    result = runner.invoke(cli_mod.app, ["--attach", "--server-port", "5124"])
+    assert result.exit_code == 1
+    assert "uses port 5123" in result.output

@@ -217,3 +217,16 @@ def test_find_running_none_on_engine_error(fp: FakeProcess, tmp_path: Path) -> N
 
 def test_find_running_unsupported_on_container(tmp_path: Path) -> None:
     assert engine.find_running(Engine.CONTAINER, tmp_path) is None
+
+
+@pytest.mark.parametrize("output", ["", "invalid", "0.0.0.0:not-a-port\n"])
+def test_published_port_rejects_invalid_output(fp: FakeProcess, output: str) -> None:
+    fp.register(["podman", "port", "ai-server", "4996/tcp"], stdout=output)
+    with pytest.raises(engine.EngineProbeError, match="published port"):
+        engine.published_port(Engine.PODMAN, "ai-server", 4996)
+
+
+def test_published_port_rejects_engine_failure(fp: FakeProcess) -> None:
+    fp.register(["podman", "port", "ai-server", "4996/tcp"], stdout="0.0.0.0:5123\n", returncode=1)
+    with pytest.raises(engine.EngineProbeError, match="published port"):
+        engine.published_port(Engine.PODMAN, "ai-server", 4996)

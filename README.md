@@ -19,6 +19,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Vertex AI](#vertex-ai)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom network arguments](#custom-network-arguments)
+  - [Terminal integration](#terminal-integration)
   - [Custom entrypoint](#custom-entrypoint)
 - [Configuration file](#configuration-file)
 - [What the launcher does](#what-the-launcher-does)
@@ -233,41 +234,94 @@ or `--server`.
 
 ### Server mode
 
-Run OpenCode V2 as a background HTTP server:
+OpenCode starts a network server by default, including when you use the TUI.
+The server binds to `0.0.0.0` inside the container and is published on all host
+interfaces. The launcher probes ports `5000-5499`, starting at a hash of the
+full canonical working-directory path. Occupied ports are skipped. The URL,
+username, and password are printed when a new server starts.
+Port probing is not a reservation: simultaneous starts can still race. Retry
+the launch if the engine reports that a port became occupied.
+
+On podman/docker, another launch from the same directory attaches to its
+existing server. Only containers with the OpenCode server label are reused;
+a shell or another assistant's container is not a server. Reuse keeps the
+existing container's mounts, environment, and credentials. Use `--no-attach`
+to apply changed launch settings in a fresh container.
+
+```bash
+ai-container                    # start a server and TUI, or attach to this directory's server
+ai-container --attach           # require an existing server; fail if none exists
+ai-container --no-attach        # fresh server and TUI on an available port
+```
+
+A foreground container ends when its initial TUI exits. Clients attached to
+that server then disconnect. For a server that survives TUI exit, use:
 
 ```bash
 ai-container --server
 ```
 
-The container runs detached. The server URL, username, and password are
-printed on startup. Server mode only supports the bundled OpenCode entrypoint.
+The container runs detached. Repeating `--server` reuses an existing server for
+the directory. Closing an attached TUI does not stop a detached server. Server
+mode only supports the bundled OpenCode entrypoint. Stop and remove a detached
+container with `podman rm -f CONTAINER` (or `docker rm -f CONTAINER`), using the
+name printed on startup.
+
 OpenCode V2 fixes the HTTP basic auth username to `opencode`; other values fail.
-Use `opencode --server URL` to connect a V2 client to this server.
+The default password comes from the host's `~/.config/opencode/service.json`,
+or is generated for the new container when absent. `--password` overrides it.
+Auto-attach inherits the existing container's password; an explicit password
+override must match that server. `--init` configures the shared service hostname
+to `0.0.0.0`; the launcher also passes the bind address explicitly.
+
+Check from the host, or another container that can reach the host IP:
+
+```bash
+# Substitute the URL and password printed on startup.
+read -rs OPENCODE_PASSWORD; export OPENCODE_PASSWORD; echo
+opencode --server http://HOST_IP:PORT api get /api/info
+opencode --server http://HOST_IP:PORT
+```
+
+An authenticated `/api/info` response confirms access to that server.
+In another container, `127.0.0.1` refers to that container, not the server's host.
+Only the server container's mounted files are available to remote clients.
+Protect the published ports with your firewall. HTTP basic auth is not encrypted;
+use a trusted network, SSH tunnel, or TLS proxy for remote access.
+
+Native OpenCode administrative commands, explicit `--server URL`, and
+`--standalone` bypass managed startup. Forward colliding native flags after `--`.
+Apple `container` starts new servers but does not support automatic reuse here.
 
 Additional server options:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--server-port PORT` | `4996` | Port to expose the server on |
+| `--server-port PORT` | *(free port in `5000-5499`)* | Published host port; container port stays `4996` |
 | `--server-username USER` | `opencode` | HTTP basic auth username (only `opencode` is supported) |
-| `--server-password PASS` | *(random)* | HTTP basic auth password |
+| `--password PASS`, `--server-password PASS` | *(service config, otherwise random)* | HTTP basic auth password |
+| `--attach` | *(automatic reuse)* | Require a server for this directory |
+| `--no-attach` | *(off)* | Skip reuse; start a fresh network server |
 
 ### Multiple containers
 
-`~/.local/state/opencode` is shared between containers, and OpenCode V2 records
-its background service (URL and pid) in `service.json` there. Each container has
-its own network and PID namespace, so two containers keep replacing each other's
-service and both restart in a loop. Disable the background service once, on the
-host (this sets `"disabled": true` in
-`~/.config/opencode/service.json`):
+OpenCode V2 records its native background service (URL and pid) in
+`$XDG_STATE_HOME/opencode/service.json`. The launcher sets `XDG_STATE_HOME` to a
+private, per-container directory, so every container registers its own service
+instead of overwriting the host's or another container's. Native service discovery
+therefore remains isolated between containers.
+
+Launcher-managed servers use explicit authenticated connections instead of
+native service discovery, so `opencode service status` does not describe them.
+Use `opencode --server URL api get /api/info` to check a published server.
+
+The shared `~/.config/opencode/service.json` still applies to all of them. If
+service mode was previously disabled there with `opencode service set disabled
+true`, re-enable it once:
 
 ```bash
-opencode service set disabled true
+opencode service unset disabled
 ```
-
-Each container then runs its own in-process server. This also applies to an
-OpenCode on the host that uses the same config; undo with
-`opencode service unset disabled`.
 
 ### Custom mounts
 
@@ -407,6 +461,15 @@ go to bash. Containers started before this flag existed carry no label and
 aren't found; Apple `container` always starts a new one. Can't be combined with
   an assistant shortcut, `--entrypoint` or `--server`.
 
+### Terminal integration
+
+Interactive sessions inherit `TERM` and `COLORTERM` and use the host's system
+terminfo database when available. The launcher temporarily sets the terminal
+title and restores it on exit. It also clears mouse reporting, bracketed paste,
+the alternate screen and other modes that a crashed TUI could leave enabled.
+
+Mouse reporting itself remains application-controlled.
+
 ### Custom entrypoint
 
 You can specify a custom entrypoint using the `--entrypoint` flag:
@@ -508,12 +571,11 @@ without an explicit `--workspace` flag.
 ## What the launcher does
 
 `ai-container` is a Python CLI (source under
-[`src/ai_container/`](src/ai_container/)) that assembles a single
-`podman run` / `docker run` / `container run` invocation: it never talks to a
-daemon API directly (the only probe is `docker info`, to detect rootless mode),
-so engine debug output (via `--debug-runtime`, separate from the launcher's own
-`--debug`) reflects exactly what would happen if you ran the printed command
-yourself.
+[`src/ai_container/`](src/ai_container/)) that assembles an engine `run` or `exec`
+invocation. It probes containers and published ports through engine CLI commands;
+it never talks to a daemon API directly. `--debug-runtime` prints the runtime
+command with OpenCode passwords redacted. `--debug` controls launcher/OpenCode
+logging separately.
 
 ## Network Configuration
 

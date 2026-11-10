@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import socket
+from pathlib import Path
+
+import pytest
 from pytest_subprocess import FakeProcess
 
 from ai_container import server
@@ -33,7 +37,7 @@ def test_configure_keeps_explicit_password(fp: FakeProcess) -> None:
     )
     assert result.password == "hunter2"
     assert "OPENCODE_PASSWORD=hunter2" in result.args
-    assert "-p" in result.args and "5000:5000" in result.args
+    assert "-p" in result.args and "0.0.0.0:5000:4996" in result.args
 
 
 def test_host_ip_linux_uses_hostname_dash_i(fp: FakeProcess) -> None:
@@ -50,3 +54,39 @@ def test_host_ip_darwin_falls_back_to_localhost(fp: FakeProcess) -> None:
     fp.register(["ipconfig", "getifaddr", "en0"], returncode=1)
     fp.register(["ipconfig", "getifaddr", "en1"], returncode=1)
     assert server._host_ip("Darwin") == "localhost"
+
+
+def test_port_uses_canonical_full_path_and_skips_occupied_port(tmp_path: Path) -> None:
+    directory = tmp_path / "project"
+    directory.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(directory, target_is_directory=True)
+    port = server.port_for(directory)
+    assert 5000 <= port <= 5499
+    assert server.port_for(alias) == port
+    with socket.socket() as listener:
+        listener.bind(("0.0.0.0", port))
+        assert server.port_for(directory) != port
+        with pytest.raises(ValueError, match="unavailable"):
+            server.port_for(directory, port)
+
+
+def test_port_range_exhaustion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def unavailable(*args: object, **kwargs: object) -> socket.socket:
+        raise OSError("busy")
+
+    monkeypatch.setattr(socket, "socket", unavailable)
+    with pytest.raises(ValueError, match="No free port"):
+        server.port_for(tmp_path)
+
+
+def test_password_from_config_and_invalid_config(tmp_path: Path) -> None:
+    assert server.configured_password(tmp_path) is None
+    config = tmp_path / ".config/opencode/service.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"password": "saved-password", "hostname": "127.0.0.1"}')
+    assert server.configured_password(tmp_path) == "saved-password"
+    for invalid in ("broken", "[]", '{"password": 123}', '{"password": ""}'):
+        config.write_text(invalid)
+        with pytest.raises(ValueError):
+            server.configured_password(tmp_path)

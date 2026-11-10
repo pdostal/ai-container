@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import shutil
+import sys
+from io import StringIO
 
 import pytest
 from pytest_subprocess import FakeProcess
 
-from ai_container import runner
+from ai_container import runner, terminal
 from ai_container.models import Engine
 
 
@@ -49,6 +51,18 @@ def test_run_skips_stty_when_unavailable(fp: FakeProcess, monkeypatch: pytest.Mo
     fp.register(["podman", "run", "--rm", "image"], returncode=0)
     exit_code = runner.run(["podman", "run", "--rm", "image"])
     assert exit_code == 0
+
+
+def test_run_sets_and_restores_terminal(fp: FakeProcess, monkeypatch: pytest.MonkeyPatch) -> None:
+    output = StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    fp.register(["podman", "run", "image"])
+    runner.run(["podman", "run", "image"], terminal_title="ai-container: project (opencode)")
+    assert (
+        output.getvalue()
+        == terminal.preamble("ai-container: project (opencode)") + terminal.epilogue()
+    )
 
 
 def test_spawn_relay_chmod_fix_runs_in_background(monkeypatch: pytest.MonkeyPatch) -> None:

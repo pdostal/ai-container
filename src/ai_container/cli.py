@@ -42,6 +42,7 @@ from . import (
     selinux,
     server,
     ssh_agent,
+    terminal,
 )
 from . import engine as engine_ops
 from . import workspace as workspace_ops
@@ -67,6 +68,8 @@ app = typer.Typer(
 )
 
 CONTAINER_HOME = Path("/home/coder")
+HOST_TERMINFO = Path("/usr/share/terminfo")
+CONTAINER_TERMINFO = Path("/run/host-terminfo")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
 INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
@@ -144,7 +147,22 @@ def main(
     server_mode: Annotated[
         bool, typer.Option("--server", help="Run OpenCode as a background HTTP server.")
     ] = False,
-    server_port: Annotated[int, typer.Option("--server-port", help="Port for --server.")] = 4996,
+    server_port: Annotated[
+        int | None,
+        typer.Option(
+            "--server-port",
+            min=1,
+            max=65535,
+            help="Published OpenCode port (default: free port in 5000-5499).",
+        ),
+    ] = None,
+    attach: Annotated[
+        bool | None,
+        typer.Option(
+            "--attach/--no-attach",
+            help="Attach to an existing directory's OpenCode server, or force a fresh container.",
+        ),
+    ] = None,
     server_username: Annotated[
         str,
         typer.Option("--server-username", help="HTTP basic auth username (V2 requires opencode)."),
@@ -153,7 +171,8 @@ def main(
         str | None,
         typer.Option(
             "--server-password",
-            help="HTTP basic auth password for --server (random if unset).",
+            "--password",
+            help="OpenCode server/attach password (default: service config, otherwise random).",
             show_default=False,
         ),
     ] = None,
@@ -321,6 +340,10 @@ def main(
             init_mode=init_mode,
             server=server_mode,
         )
+        if attach is not None and (shell or init_mode or claude or codex or copilot):
+            raise CliError("--attach/--no-attach can only use OpenCode.")
+        if attach is True and server_mode:
+            raise CliError("--attach cannot be combined with --server.")
         if codex and entrypoint is None:
             tool_args = ["--disable", "daemon_auto_start", *tool_args]
         selected_engine = engine_ops.resolve_engine(
@@ -400,7 +423,111 @@ def main(
         reporter.fail(str(exc))
         raise typer.Exit(1) from exc
 
-    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    interactive = terminal.should_allocate_tty(
+        stdin_tty=sys.stdin.isatty(),
+        stdout_tty=sys.stdout.isatty(),
+        term=os.environ.get("TERM"),
+    )
+    terminal_session = interactive and not server_mode
+    terminal_title = (
+        terminal.title_for(
+            workspace=active_workspace.name if active_workspace else None,
+            cwd=cwd,
+            entrypoint=resolved_entrypoint,
+        )
+        if terminal_session
+        else None
+    )
+    opencode_entrypoint = Path(resolved_entrypoint).name in {"opencode", "opencode2"}
+    passthrough = bool(
+        tool_args
+        and tool_args[0]
+        in {
+            "service",
+            "serve",
+            "auth",
+            "api",
+            "upgrade",
+            "update",
+            "uninstall",
+            "debug",
+            "mcp",
+            "plugin",
+            "models",
+            "stats",
+            "session",
+            "reload",
+            "pair",
+            "acp",
+        }
+    ) or any(arg.split("=", 1)[0] in {"--server", "--standalone"} for arg in tool_args)
+    network_server = opencode_entrypoint and not passthrough
+    if server_mode and passthrough:
+        reporter.fail("--server cannot forward service commands, --server, or --standalone.")
+        raise typer.Exit(1)
+    if network_server and server_username != "opencode":
+        reporter.fail("OpenCode V2 requires --server-username opencode.")
+        raise typer.Exit(1)
+    if attach is not None and not network_server:
+        reporter.fail("--attach/--no-attach requires a local OpenCode TUI.")
+        raise typer.Exit(1)
+    if debug and opencode_entrypoint:
+        tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
+    try:
+        existing = (
+            engine_ops.find_running(selected_engine, cwd, service=True)
+            if network_server and attach is not False
+            else None
+        )
+        if existing:
+            port = engine_ops.published_port(selected_engine, existing, server.CONTAINER_PORT)
+            if server_port is not None and server_port != port:
+                raise CliError(
+                    f"Existing server uses port {port}, not {server_port}; "
+                    "use --no-attach for a new server."
+                )
+            reporter.ok(
+                f"OpenCode server: http://{server._host_ip(host_platform)}:{port} ({existing})"
+            )
+            if server_mode:
+                raise typer.Exit(0)
+            exec_argv = build_exec_argv(
+                engine=selected_engine,
+                name=existing,
+                command="/usr/local/bin/opencode-launch",
+                tool_args=tool_args,
+                tty_args=[
+                    "-w",
+                    str(target_workdir),
+                    "-e",
+                    "AI_CONTAINER_OPENCODE_ATTACH=true",
+                    "-e",
+                    f"AI_CONTAINER_OPENCODE_PORT={server.CONTAINER_PORT}",
+                    "-e",
+                    f"AI_CONTAINER_OPENCODE_COMMAND={resolved_entrypoint}",
+                    *(["-e", f"OPENCODE_PASSWORD={server_password}"] if server_password else []),
+                    *(
+                        item
+                        for name in ("TERM", "COLORTERM")
+                        if (value := os.environ.get(name))
+                        for item in ("-e", f"{name}={value}")
+                    ),
+                    *(engine_ops.tty_args(selected_engine) if interactive else ["-i"]),
+                ],
+            )
+            if debug_runtime:
+                reporter.step(f"Running: {_safe_command(exec_argv)}")
+            raise typer.Exit(run(exec_argv, terminal_title=terminal_title))
+        if attach is True:
+            raise CliError(
+                "No OpenCode server running for this directory; start one with --server."
+            )
+        if network_server:
+            server_port = server.port_for(cwd, server_port)
+            server_password = server_password or server.configured_password(host_home)
+    except (ValueError, OSError, engine_ops.EngineProbeError, CliError) as exc:
+        reporter.fail(str(exc))
+        raise typer.Exit(1) from exc
     if shell and (running := engine_ops.find_running(selected_engine, cwd)):
         reporter.ok(f"Attaching to running {selected_engine.value} container: {running}")
         exec_argv = build_exec_argv(
@@ -412,7 +539,7 @@ def main(
         )
         if debug_runtime:
             reporter.step(f"Running: {shlex.join(exec_argv)}")
-        raise typer.Exit(run(exec_argv))
+        raise typer.Exit(run(exec_argv, terminal_title=terminal_title))
 
     image = engine_ops.image_name(selected_engine)
     selinux_status = selinux.detect(host_platform=host_platform, reporter=reporter)
@@ -437,6 +564,15 @@ def main(
         *engine_ops.label_args(cwd),
         "-e",
         f"HOME={CONTAINER_HOME}",
+        *(
+            item
+            for name in ("TERM", "COLORTERM")
+            if (env_value := os.environ.get(name))
+            for item in ("-e", f"{name}={env_value}")
+        ),
+        # Private state per container: keeps OpenCode's service.json out of the shared host mount.
+        "-e",
+        f"XDG_STATE_HOME={CONTAINER_HOME / '.local/state/ai-container' / container_name}",
         "-w",
         str(target_workdir),
         f"--mount=type=bind,source={cwd},target={target_workdir}"
@@ -474,6 +610,14 @@ def main(
             host_home=host_home,
             selinux_enabled=selinux_enabled,
             reporter=reporter,
+        )
+    if terminal_session and HOST_TERMINFO.is_dir() and CONTAINER_TERMINFO not in mounted_targets:
+        args.extend(
+            [
+                f"--mount=type=bind,source={HOST_TERMINFO},target={CONTAINER_TERMINFO},readonly",
+                "-e",
+                f"TERMINFO_DIRS={CONTAINER_TERMINFO}:",
+            ]
         )
     _apply_add_hosts(args, combined_add_hosts, engine=selected_engine, reporter=reporter)
     if ssh_agent_flag if ssh_agent_flag is not None else launcher_config.ssh_agent:
@@ -513,20 +657,31 @@ def main(
     for entry in env_entries.values():
         _apply_env(args, entry, reporter)
 
-    if server_mode:
+    if network_server and server_port is not None:
         server_config = server.configure(
             port=server_port,
             username=server_username,
             password=server_password,
-            tool_args=tool_args,
+            tool_args=tool_args if server_mode else [],
             host_platform=host_platform,
             reporter=reporter,
         )
-        args.extend(server_config.args)
-        tool_args = server_config.tool_args
-    elif interactive:
+        args.extend(["--label", f"{server.SERVICE_LABEL}=true", *server_config.args[1:]])
+        if server_mode:
+            args.append("-d")
+            tool_args = server_config.tool_args
+        else:
+            args.extend(
+                [
+                    "-e",
+                    f"AI_CONTAINER_OPENCODE_PORT={server.CONTAINER_PORT}",
+                    "-e",
+                    f"AI_CONTAINER_OPENCODE_COMMAND={resolved_entrypoint}",
+                ]
+            )
+    if not server_mode and interactive:
         args.extend(engine_ops.tty_args(selected_engine))
-    else:
+    elif not server_mode:
         args.append("-i")
         reporter.debug_detail("\u25cb No TTY detected; running without -t")
 
@@ -538,8 +693,6 @@ def main(
     engine_debug_args: list[str] = []
     if debug_runtime:
         engine_debug_args = engine_ops.debug_args(selected_engine)
-    if debug and resolved_entrypoint.endswith("/opencode"):
-        tool_args = ["--print-logs", "--log-level", "DEBUG", *tool_args]
 
     engine_ops.announce(
         selected_engine,
@@ -558,14 +711,25 @@ def main(
     argv = build_argv(
         engine=selected_engine,
         engine_debug_args=engine_debug_args,
-        entrypoint=resolved_entrypoint,
+        entrypoint="/usr/local/bin/opencode-launch"
+        if network_server and not server_mode
+        else resolved_entrypoint,
         args=args,
         image=image,
         tool_args=tool_args,
     )
     if debug_runtime:
-        reporter.step(f"Running: {shlex.join(argv)}")
-    raise typer.Exit(run(argv))
+        reporter.step(f"Running: {_safe_command(argv)}")
+    raise typer.Exit(run(argv, terminal_title=terminal_title))
+
+
+def _safe_command(argv: list[str]) -> str:
+    return shlex.join(
+        [
+            "OPENCODE_PASSWORD=<redacted>" if arg.startswith("OPENCODE_PASSWORD=") else arg
+            for arg in argv
+        ]
+    )
 
 
 def _resolve_entrypoint(

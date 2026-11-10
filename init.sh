@@ -41,4 +41,7 @@ for file in /usr/local/share/skillspector/opencode/commands/skillspector.md /usr
     fi
 done
 
+step "Configuring OpenCode service networking"
+opencode service set hostname 0.0.0.0
+
 printf '\nInitialization complete.\n'

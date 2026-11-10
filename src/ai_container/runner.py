@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import threading
 
+from . import terminal
 from .models import Engine
 
 
@@ -52,7 +54,7 @@ def spawn_relay_chmod_fix(engine: Engine, container_name: str) -> threading.Thre
     return thread
 
 
-def run(argv: list[str]) -> int:
+def run(argv: list[str], *, terminal_title: str | None = None) -> int:
     """Run the container engine in the foreground, inheriting stdio.
 
     Always attempts to restore the terminal afterwards (``stty sane``),
@@ -60,9 +62,21 @@ def run(argv: list[str]) -> int:
     entrypoints put the terminal into raw mode, and if the container exits
     abnormally the outer shell would otherwise be left broken.
     """
+    if terminal_title is not None:
+        _write_terminal(terminal.preamble(terminal_title))
     try:
         result = subprocess.run(argv, check=False)
         return result.returncode
     finally:
+        if terminal_title is not None:
+            _write_terminal(terminal.epilogue())
         if shutil.which("stty"):
             subprocess.run(["stty", "sane"], stderr=subprocess.DEVNULL, check=False)
+
+
+def _write_terminal(value: str) -> None:
+    try:
+        sys.stdout.write(value)
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        pass

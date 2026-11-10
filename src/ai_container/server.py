@@ -2,12 +2,54 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import socket
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from .console import Reporter
 from .naming import random_server_password
+
+CONTAINER_PORT = 4996
+SERVICE_LABEL = "ai-container.opencode-server"
+
+
+def port_for(cwd: Path, explicit: int | None = None) -> int:
+    """Probe the host port range, starting at a stable hash of the canonical path."""
+    # shortcut: ports are not reserved; add bind-failure retries if concurrent starts collide.
+    start = int.from_bytes(hashlib.sha256(str(cwd.resolve()).encode()).digest()[:8]) % 500
+    candidates = (
+        [explicit] if explicit is not None else [5000 + (start + i) % 500 for i in range(500)]
+    )
+    for port in candidates:
+        try:
+            with socket.socket() as listener:
+                listener.bind(("0.0.0.0", port))  # noqa: S104
+        except OSError:
+            continue
+        return port
+    raise ValueError(
+        f"Port {explicit} is unavailable." if explicit else "No free port in 5000-5499."
+    )
+
+
+def configured_password(host_home: Path) -> str | None:
+    """Read the shared credential without starting or stopping a host service."""
+    path = host_home / ".config/opencode/service.json"
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read OpenCode service config: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid OpenCode service config: {path}")
+    password = data.get("password")
+    if password is not None and (not isinstance(password, str) or not password):
+        raise ValueError(f"Invalid OpenCode service password: {path}")
+    return password
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,11 +103,11 @@ def configure(
     args = [
         "-d",
         "-p",
-        f"{port}:{port}",
+        f"0.0.0.0:{port}:{CONTAINER_PORT}",
         "-e",
         f"OPENCODE_PASSWORD={resolved_password}",
     ]
-    new_tool_args = ["serve", "--hostname", "0.0.0.0", "--port", str(port), *tool_args]  # noqa: S104
+    new_tool_args = ["serve", "--hostname", "0.0.0.0", "--port", str(CONTAINER_PORT), *tool_args]  # noqa: S104
 
     host_ip = _host_ip(host_platform)
     reporter.ok(f"Server mode: http://{host_ip}:{port}")
