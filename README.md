@@ -18,6 +18,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Custom mounts](#custom-mounts)
   - [Workspaces](#workspaces)
   - [Vertex AI](#vertex-ai)
+  - [AWS Bedrock](#aws-bedrock)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom network arguments](#custom-network-arguments)
   - [Terminal integration](#terminal-integration)
@@ -260,15 +261,17 @@ port `4996` too, so inside and outside match. If `4996` is occupied, it walks up
 to `5499`. The launcher prints one status line when it starts or attaches:
 
 ```text
-* Starting server + TUI - Creds: opencode:PASSWORD - Server: http://localhost:4996 http://192.168.1.2:4996 http://HOSTNAME:4996
-* Attaching to server - Server: http://localhost:4996 http://192.168.1.2:4996 http://HOSTNAME:4996
-* Starting server - Creds: opencode:PASSWORD - Server: ...
+* Starting server + TUI - opencode:PASSWORD@192.168.1.2:4996
+* Attaching to server - 192.168.1.2:4996
+* Starting server - opencode:PASSWORD@192.168.1.2:4996
 ```
 
-Credentials are only printed when a new server starts; an attach reuses the
-existing container's password. Port probing is not a reservation: simultaneous
-starts can still race. Retry the launch if the engine reports that a port became
-occupied.
+The line lists the host addresses other machines can reach, comma separated;
+loopback and link-local addresses are omitted, and `localhost` appears only when
+no other address was found. Credentials are only printed when a new server
+starts; an attach reuses the existing container's password. Port probing is not
+a reservation: simultaneous starts can still race. Retry the launch if the
+engine reports that a port became occupied.
 
 On podman/docker, another launch from the same directory attaches to its
 existing server. Only containers with the OpenCode server label are reused;
@@ -452,6 +455,34 @@ an entry in `extra_envs`/`--extra-env` (e.g.
 `CLOUD_ML_REGION=us-east5`) or drop one with
 `disable_envs`/`--disable-env`; disabling the credentials mount via
 `disable_mounts` also drops its variable.
+
+### AWS Bedrock
+
+OpenCode talks to Bedrock directly; the launcher only has to make the profile
+visible. `~/.aws` is not mounted by default:
+
+```bash
+ai-container --extra-mount ~/.aws --opencode
+```
+
+```jsonc
+// ~/.config/opencode/opencode.jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "amazon-bedrock": { "settings": { "profile": "bedrock", "region": "eu-central-1" } }
+  }
+}
+```
+
+Keep the mount read-write: SSO profiles, MFA role caches and
+`credential_process` rewrite files under `~/.aws` (static keys in
+`~/.aws/credentials` work with `:ro`). Run `aws sso login --profile PROFILE` on
+the host when the session expires — that step needs a browser; the container
+reuses the refreshed cache through the mount. The profile needs
+`bedrock:ListFoundationModels` plus model invocation permissions. For a
+permanent setup, add `extra_mounts = ["~/.aws"]` to the
+[configuration file](#configuration-file).
 
 ### Custom /etc/hosts entries
 

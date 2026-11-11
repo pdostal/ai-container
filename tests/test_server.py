@@ -22,8 +22,7 @@ def test_configure_generates_password_when_unset(fp: FakeProcess) -> None:
     assert "OPENCODE_PASSWORD=" + result.password in result.args
     assert result.tool_args == ["serve", "--hostname", "0.0.0.0", "--port", "4996", "--resume"]
     assert result.username == "opencode"
-    assert "http://localhost:4996" in result.urls
-    assert "http://10.0.0.5:4996" in result.urls
+    assert result.urls == ["10.0.0.5:4996"]
 
 
 def test_configure_keeps_explicit_password(fp: FakeProcess) -> None:
@@ -40,20 +39,27 @@ def test_configure_keeps_explicit_password(fp: FakeProcess) -> None:
     assert "-p" in result.args and "0.0.0.0:5000:4996" in result.args
 
 
-def test_host_ip_linux_uses_hostname_dash_i(fp: FakeProcess) -> None:
-    fp.register(["hostname", "-I"], stdout="192.168.1.7 10.0.0.1\n")
-    assert server._host_ip("Linux") == "192.168.1.7"
+def test_host_ips_linux_uses_hostname_dash_i(fp: FakeProcess) -> None:
+    fp.register(["hostname", "-I"], stdout="192.168.1.7 fe80::1 127.0.0.1\n")
+    assert server.host_ips("Linux") == ["192.168.1.7"]
 
 
-def test_host_ip_darwin_uses_ipconfig(fp: FakeProcess) -> None:
+def test_host_ips_linux_falls_back_to_localhost_when_only_loopback(fp: FakeProcess) -> None:
+    fp.register(["hostname", "-I"], stdout="127.0.0.1\n")
+    assert server.host_ips("Linux") == ["localhost"]
+
+
+def test_host_ips_darwin_collects_every_interface(fp: FakeProcess) -> None:
     fp.register(["ipconfig", "getifaddr", "en0"], stdout="192.168.1.9\n")
-    assert server._host_ip("Darwin") == "192.168.1.9"
+    for interface in ("en1", "en2", "en3", "en4", "en5"):
+        fp.register(["ipconfig", "getifaddr", interface], returncode=1)
+    assert server.host_ips("Darwin") == ["192.168.1.9"]
 
 
-def test_host_ip_darwin_falls_back_to_localhost(fp: FakeProcess) -> None:
-    fp.register(["ipconfig", "getifaddr", "en0"], returncode=1)
-    fp.register(["ipconfig", "getifaddr", "en1"], returncode=1)
-    assert server._host_ip("Darwin") == "localhost"
+def test_host_ips_darwin_falls_back_to_localhost(fp: FakeProcess) -> None:
+    for interface in ("en0", "en1", "en2", "en3", "en4", "en5"):
+        fp.register(["ipconfig", "getifaddr", interface], returncode=1)
+    assert server.host_ips("Darwin") == ["localhost"]
 
 
 class _FakeListener:
@@ -84,13 +90,10 @@ def test_port_skips_occupied_container_port(monkeypatch: pytest.MonkeyPatch) -> 
         server.port_for(server.CONTAINER_PORT)
 
 
-def test_urls_are_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(socket, "gethostname", lambda: "localhost")
-    assert server.urls("localhost", 4996) == ["http://localhost:4996"]
-    assert server.urls("10.0.0.5", 5000) == [
-        "http://localhost:5000",
-        "http://10.0.0.5:5000",
-    ]
+def test_urls_are_bare_and_deduplicated() -> None:
+    assert server.urls(["localhost"], 4996) == ["localhost:4996"]
+    assert server.urls(["10.0.0.5", "10.0.0.5", ""], 5000) == ["10.0.0.5:5000"]
+    assert server.urls(["fd00::5"], 4996) == ["[fd00::5]:4996"]
 
 
 def test_port_range_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import socket
 import subprocess
@@ -58,41 +59,41 @@ class ServerConfig:
     urls: list[str]
 
 
-def urls(host_ip: str, port: int) -> list[str]:
-    """Reachable URLs for a published port: loopback, host IP, hostname."""
-    hosts = ["localhost", host_ip, socket.gethostname()]
-    return list(dict.fromkeys(f"http://{host}:{port}" for host in hosts if host))
+def urls(hosts: list[str], port: int) -> list[str]:
+    """Bare ``host:port`` endpoints, IPv6 bracketed, deduplicated in order."""
+    return list(dict.fromkeys(f"[{h}]:{port}" if ":" in h else f"{h}:{port}" for h in hosts if h))
 
 
-def _host_ip(host_platform: str) -> str:
+def _reachable(ip: str) -> bool:
+    """False for loopback and link-local addresses."""
+    return bool(ip) and not ip.startswith(("127.", "::1", "169.254.", "fe80:"))
+
+
+def host_ips(host_platform: str) -> list[str]:
+    """Host addresses other machines can reach; ``localhost`` when none is found."""
+    candidates: list[str] = []
     if host_platform == "Darwin":
-        for interface in ("en0", "en1"):
+        for index in range(6):
             try:
                 result = subprocess.run(
-                    ["ipconfig", "getifaddr", interface],
+                    ["ipconfig", "getifaddr", f"en{index}"],
                     capture_output=True,
                     text=True,
                     check=True,
                 )
             except (subprocess.CalledProcessError, FileNotFoundError):
                 continue
-            ip = result.stdout.strip()
-            if ip:
-                return ip
-        return "localhost"
-
-    try:
-        result = subprocess.run(["hostname", "-I"], capture_output=True, text=True, check=True)
-        ip = result.stdout.split()[0]
-        if ip:
-            return ip
-    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
-        pass
-
-    try:
-        return socket.gethostbyname(socket.gethostname())
-    except OSError:
-        return "localhost"
+            candidates.append(result.stdout.strip())
+    else:
+        try:
+            result = subprocess.run(["hostname", "-I"], capture_output=True, text=True, check=True)
+            candidates = result.stdout.split()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+        if not candidates:
+            with contextlib.suppress(OSError):
+                candidates = [socket.gethostbyname(socket.gethostname())]
+    return list(dict.fromkeys(ip for ip in candidates if _reachable(ip))) or ["localhost"]
 
 
 def configure(
@@ -118,5 +119,5 @@ def configure(
         tool_args=new_tool_args,
         password=resolved_password,
         username=username,
-        urls=urls(_host_ip(host_platform), port),
+        urls=urls(host_ips(host_platform), port),
     )

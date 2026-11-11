@@ -1782,8 +1782,8 @@ def test_server_start_line(
         cli_mod.app, ["--runtime", "podman", "--server", "--server-port", "5050"]
     )
     assert result.exit_code == 0, result.output
-    assert "Starting server - Creds: opencode:" in result.output
-    assert "Server: http://localhost:5050 http://192.168.1.2:5050" in result.output
+    assert "Starting server - opencode:" in result.output
+    assert "@192.168.1.2:5050" in result.output
 
 
 def test_server_attach_line_has_no_creds(
@@ -1796,5 +1796,5 @@ def test_server_attach_line_has_no_creds(
     _register_server(fp, workdir)
     result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--attach"])
     assert result.exit_code == 0, result.output
-    assert "Attaching to server - Server: http://localhost:5123" in result.output
+    assert "Attaching to server - 192.168.1.2:5123" in result.output
     assert "Creds:" not in result.output

@@ -540,8 +540,8 @@ def main(
                     "use --no-attach for a new server."
                 )
             reporter.note(
-                f"Attaching to server - Server: "
-                f"{' '.join(server.urls(server._host_ip(host_platform), port))}"
+                f"Attaching to server - "
+                f"{', '.join(server.urls(server.host_ips(host_platform), port))}"
             )
             if server_mode:
                 raise typer.Exit(0)
@@ -722,8 +722,7 @@ def main(
         )
         reporter.note(
             f"{'Starting server' if server_mode else 'Starting server + TUI'} - "
-            f"Creds: {server_config.username}:{server_config.password} - "
-            f"Server: {' '.join(server_config.urls)}"
+            f"{server_config.username}:{server_config.password}@{', '.join(server_config.urls)}"
         )
         args.extend(["--label", f"{server.SERVICE_LABEL}=true", *server_config.args[1:]])
         if server_mode:
