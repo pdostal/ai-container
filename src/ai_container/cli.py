@@ -944,7 +944,7 @@ def _initialize_assistant_paths(host_home: Path, reporter: Reporter) -> None:
                 reporter.detail(f"Already exists, skipping: {path}")
             else:
                 path.mkdir(parents=True)
-                reporter.ok(f"  Created directory: {path}")
+                reporter.detail_ok(f"Created directory: {path}")
         for relative in defaults.ASSISTANT_FILE_MOUNTS:
             path = host_home / relative
             if path.exists():
@@ -952,7 +952,7 @@ def _initialize_assistant_paths(host_home: Path, reporter: Reporter) -> None:
             else:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
-                reporter.ok(f"  Created file: {path}")
+                reporter.detail_ok(f"Created file: {path}")
     except OSError as exc:
         raise CliError(f"Could not initialize host assistant state: {exc}") from exc
 
