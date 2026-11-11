@@ -84,6 +84,10 @@ def test_refuses_to_run_from_home(
         ("--opencode", "--codex"),
         ("--opencode", "--copilot"),
         ("--codex", "--copilot"),
+        ("--claude", "--pi"),
+        ("--opencode", "--pi"),
+        ("--codex", "--pi"),
+        ("--copilot", "--pi"),
     ],
 )
 def test_assistant_shortcuts_are_mutually_exclusive(
@@ -483,6 +487,7 @@ def test_default_entrypoint_is_opencode(
         ("--opencode", "/usr/local/bin/opencode-launch"),
         ("--codex", "/usr/bin/codex"),
         ("--copilot", "/usr/local/bin/copilot"),
+        ("--pi", "/usr/bin/pi"),
     ],
 )
 def test_assistant_flag_switches_entrypoint(
@@ -496,6 +501,66 @@ def test_assistant_flag_switches_entrypoint(
     runner.invoke(cli_mod.app, ["--runtime", "podman", flag])
     (argv,) = captured_run
     assert entrypoint in argv
+
+
+@pytest.mark.parametrize(
+    ("name", "entrypoint"),
+    [
+        ("opencode", "/usr/local/bin/opencode-launch"),
+        ("claude", "/home/coder/.local/bin/claude"),
+        ("codex", "/usr/bin/codex"),
+        ("copilot", "/usr/local/bin/copilot"),
+        ("pi", "/usr/bin/pi"),
+    ],
+)
+def test_assistant_subcommand_matches_shortcut(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    name: str,
+    entrypoint: str,
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", name])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert entrypoint in argv
+
+
+def test_assistant_subcommand_forwards_its_arguments(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "pi", "--resume"])
+    (argv,) = captured_run
+    assert "/usr/bin/pi" in argv
+    assert argv[-1] == "--resume"
+
+
+def test_double_dash_keeps_assistant_name_literal(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--", "pi"])
+    (argv,) = captured_run
+    assert "/usr/local/bin/opencode-launch" in argv
+    assert argv[-1] == "pi"
+
+
+def test_double_dash_after_assistant_subcommand_still_forwards_literal(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "claude", "--", "--debug"])
+    (argv,) = captured_run
+    assert "/home/coder/.local/bin/claude" in argv
+    assert argv[-1] == "--debug"
+
+
+def test_explicit_assistant_flag_wins_over_subcommand_name(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--claude", "pi"])
+    (argv,) = captured_run
+    assert "/home/coder/.local/bin/claude" in argv
+    assert argv[-1] == "pi"
 
 
 def test_codex_shortcut_disables_daemon_auto_start(
@@ -548,7 +613,7 @@ def test_init_preserves_and_skips_existing_paths(
 
 
 @pytest.mark.parametrize(
-    "flag", ["--claude", "--opencode", "--codex", "--copilot", "--shell", "--server"]
+    "flag", ["--claude", "--opencode", "--codex", "--copilot", "--pi", "--shell", "--server"]
 )
 def test_init_conflicts_with_other_launch_modes(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, flag: str
@@ -572,7 +637,7 @@ def test_server_conflicts_with_non_opencode_shortcuts(
 ) -> None:
     result = runner.invoke(cli_mod.app, ["--server", flag])
     assert result.exit_code == 1
-    assert "--server can only use the bundled OpenCode entrypoint" in result.output
+    assert "--server supports only the bundled OpenCode or pi entrypoint" in result.output
 
 
 def test_server_conflicts_with_explicit_entrypoint(
@@ -580,7 +645,7 @@ def test_server_conflicts_with_explicit_entrypoint(
 ) -> None:
     result = runner.invoke(cli_mod.app, ["--server", "--entrypoint", "/bin/true"])
     assert result.exit_code == 1
-    assert "--server can only use the bundled OpenCode entrypoint" in result.output
+    assert "--server supports only the bundled OpenCode or pi entrypoint" in result.output
 
 
 def test_no_tool_mounts_or_envs_without_config(
@@ -617,6 +682,7 @@ def _make_assistant_paths(home: Path) -> None:
         ".copilot",
         ".config/opencode",
         ".local/share/opencode",
+        ".pi/agent",
     ):
         (home / d).mkdir(parents=True)
     (home / ".claude.json").write_text("{}")
@@ -636,6 +702,7 @@ def test_assistant_mounts_are_automatic_and_read_write(
         ".copilot",
         ".config/opencode",
         ".local/share/opencode",
+        ".pi/agent",
     ):
         assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
     assert not _mount_flags_targeting(argv, "/home/coder/.cache/opencode")  # missing on host
@@ -1217,6 +1284,107 @@ def _write_config(home: Path, text: str) -> None:
     (home / ".config" / "ai-container.toml").write_text(text)
 
 
+def test_config_default_agent_selects_entrypoint(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'default_agent = "pi"\n')
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "/usr/bin/pi" in argv
+
+
+def test_explicit_flag_beats_config_default_agent(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'default_agent = "pi"\n')
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--claude"])
+    (argv,) = captured_run
+    assert "/home/coder/.local/bin/claude" in argv
+    assert "/usr/bin/pi" not in argv
+
+
+def test_subcommand_beats_config_default_agent(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'default_agent = "pi"\n')
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "codex"])
+    (argv,) = captured_run
+    assert "/usr/bin/codex" in argv
+    assert "/usr/bin/pi" not in argv
+
+
+def test_init_ignores_config_default_agent(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'default_agent = "pi"\n')
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--init"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert argv[argv.index("--entrypoint") + 1] == "/usr/local/bin/init.sh"
+    assert (isolated_home / ".pi/agent").is_dir()
+
+
+@pytest.mark.parametrize("name", defaults.PROVIDER_KEY_ENVS)
+def test_provider_keys_forwarded_without_values(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setenv(name, "secret")
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    assert argv[argv.index(name) - 1] == "-e"
+    assert f"{name}=secret" not in argv
+
+
+def test_provider_keys_absent_when_unset(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in defaults.PROVIDER_KEY_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    for name in defaults.PROVIDER_KEY_ENVS:
+        assert name not in argv
+
+
+def test_provider_keys_respect_disable_env(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in defaults.PROVIDER_KEY_ENVS:
+        monkeypatch.setenv(name, "secret")
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--disable-env", "ANTHROPIC_API_KEY"])
+    (argv,) = captured_run
+    assert "ANTHROPIC_API_KEY" not in argv
+    assert "OPENAI_API_KEY" in argv
+
+
+def test_provider_key_explicit_extra_env_wins(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "host-secret")
+    runner.invoke(cli_mod.app, ["--runtime", "podman", "--extra-env", "ANTHROPIC_API_KEY=literal"])
+    (argv,) = captured_run
+    assert "ANTHROPIC_API_KEY=literal" in argv
+    assert "ANTHROPIC_API_KEY" not in argv
+
+
 @pytest.fixture
 def agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A real listening AF_UNIX socket exported as $SSH_AUTH_SOCK (short path: sun_path limit)."""
@@ -1579,6 +1747,7 @@ def test_no_attach_starts_network_server_and_uses_config_password(
     "flags",
     [
         ["--attach", "--claude"],
+        ["--attach", "--pi"],
         ["--attach", "--server"],
         ["--no-attach", "--shell"],
         ["--server-port", "65536"],
@@ -1709,7 +1878,68 @@ def test_server_subcommand_uses_detached_server(
     assert "0.0.0.0:5050:4996" in argv
 
 
-@pytest.mark.parametrize("flag", ["--opencode", "--claude"])
+def test_pi_server_uses_socat_tcp_bridge(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "--runtime",
+            "podman",
+            "--server",
+            "--pi",
+            "--server-port",
+            "5052",
+            "--model",
+            "openai/gpt-5",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "-d" in argv
+    assert "0.0.0.0:5052:4996" in argv
+    assert "ai-container.pi-server=true" in argv
+    assert argv[argv.index("--entrypoint") + 1] == "/bin/sh"
+    assert argv[-2] == "-c"
+    assert "socat" in argv[-1]
+    assert "TCP-LISTEN:4996,reuseaddr,fork" in argv[-1]
+    assert "SYSTEM:/usr/bin/pi --mode rpc --model openai/gpt-5" in argv[-1]
+    assert "Starting pi RPC server" in result.output
+    assert "5052" in result.output
+    assert not any(arg.startswith("OPENCODE_PASSWORD=") for arg in argv)
+
+
+def test_pi_server_rejects_password(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--server", "--pi", "--password", "x"])
+    assert result.exit_code == 1
+    assert "--server-password is not used by pi RPC server mode" in result.output
+
+
+def test_server_uses_config_default_pi(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    _write_config(isolated_home, 'default_agent = "pi"\n')
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--server", "--server-port", "5053"]
+    )
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "0.0.0.0:5053:4996" in argv
+    assert "ai-container.pi-server=true" in argv
+
+
+def test_server_rejects_non_rpc_config_default(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    _write_config(isolated_home, 'default_agent = "claude"\n')
+    result = runner.invoke(cli_mod.app, ["--server"])
+    assert result.exit_code == 1
+    assert "--server supports only OpenCode and pi" in result.output
+
+
+@pytest.mark.parametrize("flag", ["--opencode", "--claude", "--pi"])
 def test_continue_subcommand_forwards_flag(
     isolated_home: Path,
     workdir: Path,
@@ -1728,7 +1958,7 @@ def test_continue_subcommand_rejects_other_assistants(
 ) -> None:
     result = runner.invoke(cli_mod.app, ["continue", "--codex"])
     assert result.exit_code == 1
-    assert "continue is only supported for OpenCode and Claude Code" in result.output
+    assert "continue is only supported for OpenCode, Claude Code and pi" in result.output
 
 
 def test_continue_subcommand_rejects_server_mode(

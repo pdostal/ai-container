@@ -7,6 +7,13 @@ from pathlib import Path
 
 from .models import MountAccess, MountEntry
 
+ASSISTANT_ENTRYPOINTS = {
+    "opencode": "/usr/local/bin/opencode",
+    "claude": "/home/coder/.local/bin/claude",
+    "codex": "/usr/bin/codex",
+    "copilot": "/usr/local/bin/copilot",
+    "pi": "/usr/bin/pi",
+}
 ASSISTANT_DIRECTORY_MOUNTS = (
     ".agents",
     ".claude",
@@ -16,9 +23,16 @@ ASSISTANT_DIRECTORY_MOUNTS = (
     ".local/share/opencode",
     ".local/state/opencode",
     ".cache/opencode",
+    ".pi/agent",
 )
 ASSISTANT_FILE_MOUNTS = (".claude.json",)
 ASSISTANT_MOUNTS = (*ASSISTANT_DIRECTORY_MOUNTS, *ASSISTANT_FILE_MOUNTS)
+PROVIDER_KEY_ENVS = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+)
 ADC_TARGET = ".config/gcloud/application_default_credentials.json"
 
 

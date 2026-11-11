@@ -174,6 +174,7 @@ class ContainerInfo:
 
 _PS_FORMAT = (
     '{{.Names}}\t{{.Label "ai-container.workdir"}}\t{{.Label "ai-container.opencode-server"}}'
+    '\t{{.Label "ai-container.pi-server"}}'
 )
 _INSPECT_FORMAT = (
     "{{.Name}}\t{{json .Config.Entrypoint}}\t{{json .Config.Cmd}}\t{{json .Config.Env}}"
@@ -203,9 +204,10 @@ def list_running(engine: Engine) -> list[ContainerInfo]:
     rows: dict[str, tuple[str, bool]] = {}
     for line in result.stdout.splitlines():
         name, _, rest = line.partition("\t")
-        workdir, _, server_label = rest.partition("\t")
+        workdir, _, rest = rest.partition("\t")
+        opencode_server, _, pi_server = rest.partition("\t")
         if name:
-            rows[name] = (workdir, server_label == "true")
+            rows[name] = (workdir, opencode_server == "true" or pi_server == "true")
     if not rows:
         return []
 

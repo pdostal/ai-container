@@ -261,6 +261,17 @@ def test_list_running_parses_containers(fp: FakeProcess) -> None:
     ]
 
 
+def test_list_running_shows_pi_server_port(fp: FakeProcess) -> None:
+    fp.register(_list_ps(), stdout="ai-p\t/home/p\t\ttrue\n")
+    fp.register(
+        ["podman", "inspect", "--format", engine._INSPECT_FORMAT, "ai-p"],
+        stdout='/ai-p\t["/bin/sh"]\t["-c","exec socat ..."]\t["HOME=/home/coder"]\n',
+    )
+    fp.register(["podman", "port", "ai-p", "4996/tcp"], stdout="0.0.0.0:4996\n")
+    infos = engine.list_running(Engine.PODMAN)
+    assert [(i.name, i.port, i.password) for i in infos] == [("ai-p", 4996, None)]
+
+
 def test_list_running_empty(fp: FakeProcess) -> None:
     fp.register(_list_ps(), stdout="")
     assert engine.list_running(Engine.PODMAN) == []

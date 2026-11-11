@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from typer._click.core import Context as TyperContext
+from typer.core import TyperCommand
 
 from . import (
     __version__,
@@ -53,6 +55,15 @@ from .runner import build_argv, build_exec_argv, run, spawn_relay_chmod_fix
 
 rich_patches.apply()
 
+
+class _DashAwareCommand(TyperCommand):
+    """Remember raw tokens after ``--`` so subcommand names there stay literal."""
+
+    def parse_args(self, ctx: TyperContext, args: list[str]) -> list[str]:
+        ctx.meta["after_double_dash"] = tuple(args[args.index("--") + 1 :]) if "--" in args else ()
+        return super().parse_args(ctx, args)
+
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=False,
@@ -73,15 +84,17 @@ CONTAINER_TERMINFO = Path("/run/host-terminfo")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
 INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
-DEFAULT_OPENCODE_ENTRYPOINT = "/usr/local/bin/opencode"
-DEFAULT_CLAUDE_ENTRYPOINT = str(CONTAINER_HOME / ".local/bin/claude")
-DEFAULT_CODEX_ENTRYPOINT = "/usr/bin/codex"
-DEFAULT_COPILOT_ENTRYPOINT = "/usr/local/bin/copilot"
+DEFAULT_OPENCODE_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["opencode"]
+DEFAULT_CLAUDE_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["claude"]
+DEFAULT_CODEX_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["codex"]
+DEFAULT_COPILOT_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["copilot"]
+DEFAULT_PI_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["pi"]
 BUNDLED_ASSISTANT_ENTRYPOINTS = (
     DEFAULT_OPENCODE_ENTRYPOINT,
     DEFAULT_CLAUDE_ENTRYPOINT,
     DEFAULT_CODEX_ENTRYPOINT,
     DEFAULT_COPILOT_ENTRYPOINT,
+    DEFAULT_PI_ENTRYPOINT,
 )
 SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "shell", "help"})
 
@@ -96,7 +109,7 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.command()
+@app.command(cls=_DashAwareCommand)
 def main(
     ctx: typer.Context,
     version: Annotated[
@@ -130,6 +143,9 @@ def main(
     copilot: Annotated[
         bool,
         typer.Option("--copilot", help="Shortcut for --entrypoint the bundled Copilot CLI."),
+    ] = False,
+    pi: Annotated[
+        bool, typer.Option("--pi", help="Shortcut for --entrypoint the bundled pi agent.")
     ] = False,
     shell: Annotated[
         bool,
@@ -319,23 +335,45 @@ def main(
 
         ai-container --copilot
 
+        ai-container --pi
+
+        ai-container pi -p 'summarize this repo'
+
+        ai-container --server --pi
+
         ai-container --entrypoint /bin/bash -c 'echo hi'
 
         ai-container --shell
 
         ai-container --claude -- --debug
 
-    [dim]Subcommands (init, server, attach, continue, list, shell, help) are sugar
-    for the matching flag; the flag spellings keep working. The last example
-    forwards a literal "--debug" to Claude Code itself, rather than turning on
-    this launcher's own --debug output -- needed only because "--debug" collides
-    with one of ai-container's own flags.[/dim]
+    [dim]Subcommands (init, server, attach, continue, list, shell, help, plus the
+    assistant names pi, opencode, claude, codex and copilot) are sugar for the
+    matching flag; the flag spellings keep working. Put a forwarded token after
+    "--" to keep it literal, as in the last example, which sends "--debug" to
+    Claude Code instead of enabling this launcher's own --debug output.[/dim]
     """
     reporter = Reporter(debug=debug)
     host_platform = platform.system()
     host_home = Path.home()
     tool_args = list(tool_args or [])
     continue_mode = False
+    pi_server = False
+    pi_port: int | None = None
+    after_dash = ctx.meta.get("after_double_dash", ())
+    if (
+        tool_args
+        and len(tool_args) > len(after_dash)
+        and tool_args[0] in defaults.ASSISTANT_ENTRYPOINTS
+        and entrypoint is None
+        and not (claude or opencode or codex or copilot or pi)
+    ):
+        assistant = tool_args.pop(0)
+        claude = assistant == "claude"
+        opencode = assistant == "opencode"
+        codex = assistant == "codex"
+        copilot = assistant == "copilot"
+        pi = assistant == "pi"
     if tool_args and tool_args[0] in SUBCOMMANDS:
         subcommand = tool_args.pop(0)
         if subcommand == "help":
@@ -366,8 +404,7 @@ def main(
                 raise CliError(
                     f"{argument.split('=', 1)[0]} was removed; use --server and --server-* options."
                 )
-        if server_mode and server_username != "opencode":
-            raise CliError("OpenCode V2 requires --server-username opencode.")
+        launcher_config = config.load_config(config.config_path(host_home))
         cli_mounts = [config.parse_mount(m, source="--extra-mount") for m in extra_mount or []]
         cli_envs = {config.env_name(e, source="--extra-env"): e for e in env or []}
         resolved_entrypoint = _resolve_entrypoint(
@@ -376,21 +413,29 @@ def main(
             opencode=opencode,
             codex=codex,
             copilot=copilot,
+            pi=pi,
             shell=shell,
             init_mode=init_mode,
             server=server_mode,
+            default_agent=launcher_config.default_agent,
         )
+        pi_server = server_mode and Path(resolved_entrypoint).name == "pi"
+        if pi_server and server_password is not None:
+            raise CliError("--server-password is not used by pi RPC server mode.")
+        if server_mode and not pi_server and server_username != "opencode":
+            raise CliError("OpenCode V2 requires --server-username opencode.")
         if continue_mode and Path(resolved_entrypoint).name not in {
             "opencode",
             "opencode2",
             "claude",
+            "pi",
         }:
-            raise CliError("continue is only supported for OpenCode and Claude Code.")
+            raise CliError("continue is only supported for OpenCode, Claude Code and pi.")
         if continue_mode and server_mode:
             raise CliError("continue cannot be combined with server mode.")
         if show_secrets and not list_mode:
             raise CliError("--show-secrets requires --list.")
-        if attach is not None and (shell or init_mode or claude or codex or copilot):
+        if attach is not None and (shell or init_mode or claude or codex or copilot or pi):
             raise CliError("--attach/--no-attach can only use OpenCode.")
         if attach is True and server_mode:
             raise CliError("--attach cannot be combined with --server.")
@@ -412,7 +457,6 @@ def main(
                 "(Apple's container tool already runs each container in its own VM; "
                 "docker has no krun runtime)."
             )
-        launcher_config = config.load_config(config.config_path(host_home))
         disabled_mounts = tuple(
             dict.fromkeys(
                 [
@@ -580,6 +624,8 @@ def main(
         if network_server:
             server_port = server.port_for(server_port)
             server_password = server_password or server.configured_password(host_home)
+        if pi_server:
+            pi_port = server.port_for(server_port)
     except (ValueError, OSError, engine_ops.EngineProbeError, CliError) as exc:
         reporter.fail(str(exc))
         raise typer.Exit(1) from exc
@@ -711,6 +757,36 @@ def main(
             args.extend(["-e", f"{name}={exported}"])
     for entry in env_entries.values():
         _apply_env(args, entry, reporter)
+    for name in defaults.PROVIDER_KEY_ENVS:
+        if name in disabled_envs:
+            reporter.debug_fail(f"{name} disabled")
+        elif name in env_entries or name in launcher_config.export_vars:
+            continue
+        elif os.environ.get(name):
+            reporter.debug_ok(f"Forwarding {name} environment variable")
+            args.extend(["-e", name])
+        else:
+            reporter.debug_fail(f"{name} not set")
+
+    run_entrypoint = resolved_entrypoint
+    if pi_server and pi_port is not None:
+        pi_cmd = shlex.join([DEFAULT_PI_ENTRYPOINT, "--mode", "rpc", *tool_args])
+        listen = f"TCP-LISTEN:{server.CONTAINER_PORT},reuseaddr,fork"
+        args.extend(
+            [
+                "-d",
+                "--label",
+                f"{server.PI_SERVICE_LABEL}=true",
+                "-p",
+                f"0.0.0.0:{pi_port}:{server.CONTAINER_PORT}",
+            ]
+        )
+        reporter.note(
+            "Starting pi RPC server - "
+            f"{', '.join(server.urls(server.host_ips(host_platform), pi_port))}"
+        )
+        tool_args = ["-c", f"exec {shlex.join(['/usr/bin/socat', listen, f'SYSTEM:{pi_cmd}'])}"]
+        run_entrypoint = "/bin/sh"
 
     if network_server and server_port is not None:
         server_config = server.configure(
@@ -771,7 +847,7 @@ def main(
         engine_debug_args=engine_debug_args,
         entrypoint="/usr/local/bin/opencode-launch"
         if network_server and not server_mode
-        else resolved_entrypoint,
+        else run_entrypoint,
         args=args,
         image=image,
         tool_args=tool_args,
@@ -816,9 +892,11 @@ def _resolve_entrypoint(
     opencode: bool,
     codex: bool,
     copilot: bool,
+    pi: bool,
     shell: bool,
     init_mode: bool,
     server: bool,
+    default_agent: str,
 ) -> str:
     selected = [
         flag
@@ -827,13 +905,14 @@ def _resolve_entrypoint(
             ("--opencode", opencode),
             ("--codex", codex),
             ("--copilot", copilot),
+            ("--pi", pi),
         )
         if enabled
     ]
     if len(selected) > 1:
         raise CliError(f"Cannot combine assistant shortcuts: {', '.join(selected)}.")
     if server and (claude or codex or copilot or entrypoint is not None):
-        raise CliError("--server can only use the bundled OpenCode entrypoint.")
+        raise CliError("--server supports only the bundled OpenCode or pi entrypoint.")
     if init_mode:
         if selected or entrypoint is not None or shell or server:
             raise CliError(
@@ -849,13 +928,11 @@ def _resolve_entrypoint(
         return SHELL_ENTRYPOINT
     if entrypoint is not None:
         return entrypoint
-    if claude:
-        return DEFAULT_CLAUDE_ENTRYPOINT
-    if codex:
-        return DEFAULT_CODEX_ENTRYPOINT
-    if copilot:
-        return DEFAULT_COPILOT_ENTRYPOINT
-    return DEFAULT_OPENCODE_ENTRYPOINT
+    if selected:
+        return defaults.ASSISTANT_ENTRYPOINTS[selected[0].removeprefix("--")]
+    if server and default_agent not in {"opencode", "pi"}:
+        raise CliError("--server supports only OpenCode and pi; use --pi or change default_agent.")
+    return defaults.ASSISTANT_ENTRYPOINTS[default_agent]
 
 
 def _initialize_assistant_paths(host_home: Path, reporter: Reporter) -> None:

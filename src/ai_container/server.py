@@ -13,6 +13,7 @@ from .naming import random_server_password
 
 CONTAINER_PORT = 4996
 SERVICE_LABEL = "ai-container.opencode-server"
+PI_SERVICE_LABEL = "ai-container.pi-server"
 
 
 def port_for(explicit: int | None = None) -> int:

@@ -112,8 +112,8 @@ ai-container [WRAPPER OPTIONS] -- [TOOL ARGS]
 
 Everything before `--` configures the launcher itself (engine, mounts, server
 mode, ...). Everything after `--` is passed straight through to the entrypoint
-running inside the container (OpenCode, Claude Code, Codex, Copilot, or whatever
-`--entrypoint` points at).
+running inside the container (OpenCode, Claude Code, Codex, Copilot, pi, or
+whatever `--entrypoint` points at).
 
 `--` is only *required* when the tool argument you're forwarding collides with
 one of the launcher's own flag names (see the list in `ai-container --help`) or
@@ -130,6 +130,9 @@ ai-container init
 ai-container --claude
 ai-container --codex
 ai-container --copilot
+ai-container --pi
+# assistant names also work as subcommands
+ai-container pi -p 'summarize this repo'
 # --resume isn't ours, forwarded automatically
 ai-container --claude --resume
 ai-container --entrypoint /bin/bash -c 'echo hi'   # same for -c
@@ -197,9 +200,12 @@ The launcher automatically:
   `container`: via its built-in `--ssh` forwarding, macOS only).
 - Mounts `~/.ssh/known_hosts` read-only, and read-write `~/.agents`,
   `~/.claude`, `~/.claude.json`, `~/.config/opencode`,
-  `~/.local/share/opencode`, `~/.local/state/opencode` and `~/.cache/opencode`
-  (all skippable with `--disable-mount` / `disable_mounts`).
+  `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`
+  and `~/.pi/agent` (all skippable with `--disable-mount` / `disable_mounts`).
 - Sets up [Vertex AI](#vertex-ai) from three host variables.
+- Forwards the provider keys `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY` and `OPENROUTER_API_KEY` by name when set on the host
+  (disable with `--disable-env`).
 - Mounts and forwards nothing else by default: other credentials, tool
   configs, caches and environment variables come from the
   [configuration file](#configuration-file) (`extra_mounts`, `extra_envs`).
@@ -294,9 +300,9 @@ ai-container server
 
 The container runs detached. Repeating `--server` reuses an existing server for
 the directory. Closing an attached TUI does not stop a detached server. Server
-mode only supports the bundled OpenCode entrypoint. Stop and remove a detached
-container with `podman rm -f CONTAINER` (or `docker rm -f CONTAINER`), using the
-name printed on startup.
+mode supports OpenCode (HTTP) and pi (`--server --pi`, JSONL RPC over TCP).
+Stop and remove a detached container with `podman rm -f CONTAINER` (or
+`docker rm -f CONTAINER`), using the name printed on startup.
 
 OpenCode V2 fixes the HTTP basic auth username to `opencode`; other values fail.
 The default password comes from the host's `~/.config/opencode/service.json`,
@@ -334,6 +340,24 @@ Additional server options:
 | `--password PASS`, `--server-password PASS` | *(service config, otherwise random)* | HTTP basic auth password |
 | `--attach` | *(automatic reuse)* | Require a server for this directory |
 | `--no-attach` | *(off)* | Skip reuse; start a fresh network server |
+
+#### pi RPC server
+
+`--server --pi` publishes pi's JSONL RPC protocol on TCP port `4996` (or
+`--server-port`). socat starts one `pi --mode rpc` process per connection. There
+is no password and no TLS; firewall the port or tunnel it over SSH. This is a
+stdio-to-TCP bridge, not an HTTP server, so `--attach` and
+`--server-password` do not apply.
+
+```bash
+ai-container --server --pi --model openai/gpt-5
+# then, from another machine:
+socat - TCP:HOST_IP:4996
+```
+
+Send JSONL commands such as `{"id":"1","type":"get_state"}` and read the
+matching responses and events. Upstream pi RPC is stdio-only; without the
+launcher's socat bridge it only works in a foreground process.
 
 ### List running containers
 
@@ -560,9 +584,12 @@ ai-container --entrypoint /bin/echo -- hello world
 ai-container -- --help
 ```
 
-`--claude`, `--opencode`, `--codex` and `--copilot` are shortcuts for the
-bundled assistants' entrypoints; an explicit `--entrypoint` always takes
-precedence over a shortcut. Assistant shortcuts are mutually exclusive.
+`--claude`, `--opencode`, `--codex`, `--copilot` and `--pi` are shortcuts for
+the bundled assistants' entrypoints; an explicit `--entrypoint` always takes
+precedence over a shortcut, and assistant shortcuts are mutually exclusive.
+`ai-container pi`, `opencode`, `claude`, `codex` and `copilot` are equivalent
+subcommands. A forwarded token after `--` stays literal, so `ai-container --
+pi` sends the word `pi` to the default entrypoint instead of launching pi.
 
 ## Configuration file
 
@@ -573,6 +600,7 @@ elsewhere). A fully commented template lives in
 [`ai-container.toml.example`](ai-container.toml.example):
 
 ```toml
+default_agent = "pi"
 add_hosts = ["openqa-ai.qam.suse.cz:169.254.1.2"]
 extra_network_args = ["--network=pasta:-i,dummy0,-a,172.29.0.2,-n,24,-g,172.29.0.1", "--dns=1.1.1.1"]
 extra_envs = ["MY_VARIABLE", "FIXED=value", "DERIVED=${MY_VARIABLE}"]
@@ -591,6 +619,11 @@ name = "backend"
 dirs = ["/home/user/repos/api"]
 ```
 
+`default_agent` selects the assistant launched when no assistant shortcut,
+subcommand or `--entrypoint` is given. Valid values are `opencode`, `claude`,
+`codex`, `copilot` and `pi`; the default is `opencode`. Explicit CLI selection
+always wins. `--server` accepts `opencode` (HTTP) and `pi` (TCP RPC).
+
 `add_hosts` entries combine additively with any `--add-host` flags on the
 command line, de-duplicated. On the `container` engine, config-supplied
 `add_hosts` are silently skipped (no `/etc/hosts` equivalent exists); an
@@ -602,8 +635,11 @@ with `--network-arg` flags and de-duplicated (see
 replaces the default `--network=pasta` on podman.
 
 `extra_envs` lists the container's environment on top of the built-in
-[Vertex AI](#vertex-ai) variables; nothing else is set by default. `NAME`
-forwards the host value when set; `NAME=value` sets a literal, with
+[Vertex AI](#vertex-ai) variables and the provider keys
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and
+`OPENROUTER_API_KEY`. Those four are forwarded by name (value-less `-e NAME`,
+so the secret stays out of the process list) when set on the host, unless
+disabled. `NAME` forwards the host value when set; `NAME=value` sets a literal, with
 `${HOST_VAR}` expanded from the host environment (no shell evaluation; the
 entry is skipped if a referenced variable is unset or empty). Entries combine
 with repeatable `--extra-env` flags; a flag entry with the same `NAME` replaces
@@ -737,7 +773,7 @@ client config at `host.container.internal:<port>`.
 - **Security**: gpg2, openssh-clients, gitleaks, SkillSpector
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
-- **AI Coding Assistants**: Claude Code, OpenCode, Codex, GitHub Copilot CLI
+- **AI Coding Assistants**: Claude Code, OpenCode, Codex, GitHub Copilot CLI, pi
 
 ## Agent Skills
 

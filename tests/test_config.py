@@ -38,6 +38,30 @@ def test_load_config_reads_add_hosts_and_env(tmp_path: Path) -> None:
     assert result.extra_envs == ("OPENQA_HOST", "OPENQA_TOKEN")
 
 
+def test_load_config_default_agent_defaults_to_opencode(tmp_path: Path) -> None:
+    assert config.load_config(tmp_path / "missing.toml").default_agent == "opencode"
+
+
+def test_load_config_reads_default_agent(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('default_agent = "pi"\n')
+    assert config.load_config(path).default_agent == "pi"
+
+
+def test_load_config_rejects_unknown_default_agent(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text('default_agent = "nope"\n')
+    with pytest.raises(config.ConfigError, match="default_agent"):
+        config.load_config(path)
+
+
+def test_load_config_rejects_non_string_default_agent(tmp_path: Path) -> None:
+    path = tmp_path / "ai-container.toml"
+    path.write_text("default_agent = 1\n")
+    with pytest.raises(config.ConfigError, match="default_agent"):
+        config.load_config(path)
+
+
 def test_load_config_reads_extra_network_args(tmp_path: Path) -> None:
     path = tmp_path / "ai-container.toml"
     path.write_text('extra_network_args = ["--network=pasta:-i,dummy0"]\n')

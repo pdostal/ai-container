@@ -3,6 +3,10 @@
 # the sample values are illustrations only. The file ships as a no-op.
 # CLI flags override scalars and are merged (de-duplicated) into lists.
 
+# Assistant launched when no assistant shortcut, subcommand or --entrypoint is
+# given. One of: opencode, claude, codex, copilot, pi. Default: "opencode".
+# default_agent = "pi"
+
 # Forward the host SSH agent into the container. Default: true.
 # Flag: --ssh-agent / --no-ssh-agent.
 # ssh_agent = false
@@ -32,7 +36,8 @@
 # disable_envs = ["PUSHOVER_TOKEN"]
 
 # Host paths (directories or files) to bind-mount, on top of the built-in rw mounts of
-# ~/.agents, ~/.claude, ~/.claude.json and OpenCode's config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
+# ~/.agents, ~/.claude, ~/.claude.json, ~/.pi/agent and OpenCode's
+# config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
 # Without TARGET, paths under $HOME map to the same place under /home/coder. Relative
 # SOURCEs resolve from the launch directory; missing ones are skipped. The CLI wins on
 # target clashes and over disable_mounts. Default: []. Flag: --extra-mount / -m.

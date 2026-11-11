@@ -13,6 +13,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import defaults
 from .models import MountAccess, MountEntry
 
 
@@ -28,6 +29,7 @@ class Workspace:
 
 @dataclass(frozen=True, slots=True)
 class LauncherConfig:
+    default_agent: str = "opencode"
     add_hosts: tuple[str, ...] = ()
     extra_network_args: tuple[str, ...] = ()
     extra_envs: tuple[str, ...] = ()
@@ -109,6 +111,11 @@ def load_config(path: Path) -> LauncherConfig:
     if "env" in data:
         raise ConfigError(f"{path}: 'env' was renamed to 'extra_envs'")
 
+    default_agent = data.get("default_agent", "opencode")
+    if not isinstance(default_agent, str) or default_agent not in defaults.ASSISTANT_ENTRYPOINTS:
+        valid = ", ".join(sorted(defaults.ASSISTANT_ENTRYPOINTS))
+        raise ConfigError(f"{path}: 'default_agent' must be one of {valid}")
+
     disable_mounts = tuple(
         normalize_disable_path(Path(d), source=f"{path}: 'disable_mounts'")
         for d in _str_list(path, data, "disable_mounts")
@@ -138,6 +145,7 @@ def load_config(path: Path) -> LauncherConfig:
     workspaces = tuple(_parse_workspace(path, entry) for entry in raw_workspaces)
 
     return LauncherConfig(
+        default_agent=default_agent,
         add_hosts=_str_list(path, data, "add_hosts"),
         extra_network_args=_str_list(path, data, "extra_network_args"),
         extra_envs=extra_envs,
