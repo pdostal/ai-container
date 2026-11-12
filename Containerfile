@@ -11,7 +11,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis less cnf cnf-bash openssh-clients hostname openQA-client \
     php8-xmlreader php8-xmlwriter php8-sqlite php8-tokenizer php8-phar perl-Mojo-SQLite perl-Minion-Backend-SQLite skillspector \
     php-composer2 php8-smbclient php8-ldap php8-mysql php8-pgsql rtk openai-codex pi-coding-agent \
-    pi-coding-agent-examples socat skillspector-mcp opentofu \
+    pi-coding-agent-examples socat skillspector-mcp opentofu openqa-mon bc ipcalc \
     perl-SQL-SplitStatement os-autoinst obs-service-verify_file obs-service-update_changelog obs-service-tar_scm obs-service-tar \
     obs-service-source_validator obs-service-set_version obs-service-recompress obs-service-obs_scm-common obs-service-obs_scm \
     obs-service-go_modules obs-service-format_spec_file obs-service-download_files obs-service-cargo obs-service-extract_file \
