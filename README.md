@@ -252,18 +252,18 @@ ai-container init
 The command creates any missing built-in assistant mount paths on the host,
 leaving every existing path untouched, then runs [`init.sh`](init.sh) inside
 the container. Its changes persist through the default mounts. Initialization
-installs the OpenQA, openSUSE packaging, and frontend design skills, Caveman, the RTK and Graphify
-assistant configuration, and SkillSpector's `/skillspector` command and
-`skillspector_scan` tool for OpenCode. It also enables pi's `quietStartup`
-setting (without overriding an existing value) to hide pi's startup header and
-installs a pi extension that reduces the gap between transcript messages to
-one blank line, removes the empty spacer above the input box, and keeps
-completed "Thinking..." markers out of the transcript while showing a blue
-"Thinking..." at the start of the footer stats line during reasoning. The same
-spot shows `Working...` while a tool is running. To silence
-pi's version-update notice as well, add
-`PI_SKIP_VERSION_CHECK=1` to `extra_envs` (or pass
-`--extra-env PI_SKIP_VERSION_CHECK=1`).
+installs the OpenQA, openSUSE packaging, frontend design, and Caveman skills
+for OpenCode, Claude Code, and pi; RTK for OpenCode and pi; Graphify for
+Claude Code, OpenCode, and pi; and SkillSpector's `/skillspector` command plus
+`skillspector_scan` tool for OpenCode and pi. It also enables pi's
+`quietStartup` setting (without overriding an existing value) to hide pi's
+startup header and installs a pi extension that reduces the gap between
+transcript messages to one blank line, removes the empty spacer above the input
+box, and keeps completed "Thinking..." markers out of the transcript while
+showing a blue "Thinking..." at the start of the footer stats line during
+reasoning. The same spot shows `Working...` while a tool is running. To silence
+pi's version-update notice as well, add `PI_SKIP_VERSION_CHECK=1` to
+`extra_envs` (or pass `--extra-env PI_SKIP_VERSION_CHECK=1`).
 
 `--init` can't be combined with an assistant shortcut, `--entrypoint`, `--shell`
 or `--server`.

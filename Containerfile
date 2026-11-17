@@ -1,11 +1,14 @@
 FROM registry.opensuse.org/opensuse/tumbleweed:latest
 ARG CODER_UID=1000
 ARG CODER_GID=1000
+# Native install scripts npm 12 is allowed to run. Pi installs packages as the
+# coder user, so this list is applied to both root and coder below.
+ARG NPM_ALLOW_SCRIPTS=protobufjs,core-js,@opencode/cli,msgpackr-extract,node-pty,@ast-grep/cli,tree-sitter-bash,pi-memory
 RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo spec-cleaner rpmlint osc tilth bugwarden \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy python314-flake8 python314-yamllint kubernetes-client \
     golangci-lint python313-gitlint aws-cli azure-cli perl-Mojolicious perl-Test-Exception jq yq \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep npm26 \
-    clang-tools ruby taplo php8 os-autoinst-distri-opensuse-deps nodejs26 bat knot knot-utils chromium \
+    clang-tools make gcc-c++ python3 ruby taplo php8 os-autoinst-distri-opensuse-deps nodejs26 bat knot knot-utils chromium \
     php8-ctype php8-curl php8-dom php8-fileinfo php8-gd skillspector skillspector-mcp os-autoinst-devel python314-ruff iputils \
     php8-mbstring php8-openssl php8-pdo php8-posix php8-zip php8-zlib ShellCheck forgejo-cli kustomize gitleaks gh glab gitea-tea \
     php8-bz2 php8-iconv php8-imagick php8-intl php8-pcntl php8-redis less cnf cnf-bash openssh-clients hostname openQA-client \
@@ -33,7 +36,7 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
-    && npm config set allow-scripts=protobufjs,core-js,@opencode/cli,msgpackr-extract --location=user && npm install -g npm@latest \
+    && npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user && npm install -g npm@latest \
     && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp \
     && test -x /usr/local/bin/opencode
 # Reuse an existing group when CODER_GID already exists in the base image.
@@ -50,6 +53,7 @@ COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 COPY --chmod=755 init.sh /usr/local/bin/init.sh
 COPY --chmod=755 opencode/launch.sh /usr/local/bin/opencode-launch
 COPY --chmod=644 pi/compact-messages.js /usr/local/share/pi/extensions/compact-messages.js
+COPY --chmod=644 pi/skillspector.js /usr/local/share/pi/extensions/skillspector.js
 COPY skillspector/plugin.js /usr/local/share/skillspector/opencode/plugins/skillspector.js
 COPY skillspector/skillspector.md /usr/local/share/skillspector/opencode/commands/skillspector.md
 COPY opencode/rtk-v2.js /usr/local/share/opencode/rtk-v2.js
@@ -62,6 +66,9 @@ RUN rm -rf /tmp/opencode /tmp/.bun-0-*.so /tmp/node-compile-cache
 WORKDIR /home/coder
 USER coder
 ENV PATH="/home/coder/.local/bin:${PATH}"
+# Pi runs npm installs as coder under ~/.pi/agent/npm; give that user the same
+# allowlist so native modules such as node-pty compile instead of being skipped.
+RUN npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN uv tool install graphifyy
 RUN uv tool install git+https://github.com/NVIDIA/skillspector.git@v2.12.0

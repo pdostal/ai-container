@@ -32,10 +32,14 @@ step "Configuring RTK"
 if [ ! -f "$HOME/.config/opencode/plugins/rtk-v2.js" ]; then
     install -Dm644 /usr/local/share/opencode/rtk-v2.js "$HOME/.config/opencode/plugins/rtk-v2.js"
 fi
+if [ ! -e "$HOME/.pi/agent/extensions/rtk.ts" ]; then
+    rtk init --global --agent pi --no-patch
+fi
 
 step "Configuring Graphify"
 graphify install --platform=claude
 graphify install --platform=opencode
+graphify install --platform=pi
 
 step "Configuring pi"
 mkdir -p "$HOME/.pi/agent"
@@ -53,13 +57,30 @@ if [ ! -e "$HOME/.pi/agent/extensions/compact-messages.js" ]; then
         "$HOME/.pi/agent/extensions/compact-messages.js"
 fi
 
-step "Installing the SkillSpector OpenCode extension"
+step "Repairing native npm modules"
+node_pty="$HOME/.pi/agent/npm/node_modules/node-pty"
+if [ -d "$node_pty" ]; then
+    node_pty_platform="$(node -p 'process.platform + "-" + process.arch')"
+    if [ ! -e "$node_pty/build/Release/pty.node" ] && \
+        [ ! -e "$node_pty/prebuilds/$node_pty_platform/pty.node" ]; then
+        printf 'Rebuilding node-pty for %s...\n' "$node_pty_platform"
+        if ! (cd "$HOME/.pi/agent/npm" && npm rebuild node-pty --foreground-scripts); then
+            printf 'warning: node-pty rebuild failed; Plannotator PTY features may be unavailable\n' >&2
+        fi
+    fi
+fi
+
+step "Installing the SkillSpector extensions"
 for file in /usr/local/share/skillspector/opencode/commands/skillspector.md /usr/local/share/skillspector/opencode/plugins/skillspector.js; do
     target="$HOME/.config/opencode/${file#/usr/local/share/skillspector/opencode/}"
     if [ ! -e "$target" ]; then
         install -Dm644 "$file" "$target"
     fi
 done
+if [ ! -e "$HOME/.pi/agent/extensions/skillspector.js" ]; then
+    install -Dm644 /usr/local/share/pi/extensions/skillspector.js \
+        "$HOME/.pi/agent/extensions/skillspector.js"
+fi
 
 step "Configuring OpenCode service networking"
 opencode service set hostname 0.0.0.0
