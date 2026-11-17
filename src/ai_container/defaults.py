@@ -14,15 +14,15 @@ ASSISTANT_ENTRYPOINTS = {
     "copilot": "/usr/local/bin/copilot",
     "pi": "/usr/bin/pi",
 }
-# pi loads every extension through jiti, which Babel-transforms it and caches the
-# result under $TMPDIR/jiti (the image points $TMPDIR at ~/.cache/tmp); Node's
-# module-compile cache lands next to it. A container filesystem is discarded on
-# exit, so without these two mounts every start re-transpiles every extension:
-# ~57s cold against ~4s once the cache survives a restart.
-PI_CACHE_MOUNTS = (
-    ".cache/tmp/jiti",
-    ".cache/tmp/node-compile-cache",
-)
+# The image points $TMPDIR at ~/.cache/tmp and the expensive state lives
+# underneath it: jiti's Babel transpile cache ($TMPDIR/jiti), Node's
+# module-compile cache (NODE_COMPILE_CACHE), and the caches pi-subagents and
+# pyright keep in $TMPDIR. A container filesystem is discarded on exit, so
+# without this mount every start re-transpiles every pi extension: ~57s cold
+# against ~4s once the cache survives a restart. The parent directory is mounted
+# rather than the individual entries because pyright names its cache
+# `pyright-<pid>-<random>`, which no fixed mount could follow.
+PI_CACHE_MOUNTS = (".cache/tmp",)
 ASSISTANT_DIRECTORY_MOUNTS = (
     ".agents",
     ".claude",
@@ -34,6 +34,7 @@ ASSISTANT_DIRECTORY_MOUNTS = (
     ".cache/opencode",
     ".pi/agent",
     ".pi-lens",
+    ".context-mode",
     *PI_CACHE_MOUNTS,
 )
 ASSISTANT_FILE_MOUNTS = (".claude.json",)

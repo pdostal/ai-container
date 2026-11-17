@@ -1,0 +1,35 @@
+# Extensions pi-print loads for one-shot (`-p`) runs, one entry per line: either
+# an absolute path, a `~/`-relative path, or `builtin:<name>`. Blank lines and
+# everything after `#` are ignored, and entries that do not exist are skipped, so
+# this file survives packages being installed or removed.
+#
+# `pi-print` always passes `--no-extensions`, which also drops the builtin
+# extensions, hence the four `builtin:` lines below. Keep the list short: every
+# entry is imported on each start, and the imports are sequential. Measured
+# import cost is roughly a tenth of a second per megabyte of bundle.
+#
+# Deliberately absent (all of it only draws or drives a TUI):
+#   @kaishin/pi-usage        1353ms - usage/quota/token status bars and commands
+#   @plannotator/pi-extension 207ms - plan-mode UI
+#   pi-interactive-shell      185ms - overlay for supervising interactive CLIs
+#   compact-messages.js       135ms - transcript/footer spacing patches
+#   pi-powerline-footer        76ms - powerline footer
+#   pi-btw                     13ms - side conversations
+# The two most expensive entries kept below are pi-lens (642ms) and
+# pi-subagents (404ms); drop them too if a print run does not need LSP
+# navigation or subagents.
+builtin:codemode
+builtin:mcp
+builtin:tool-search
+builtin:llama.cpp
+~/.pi/agent/extensions/rtk.ts
+~/.pi/agent/extensions/skillspector.js
+~/.pi/agent/npm/node_modules/pi-web-access/dist/index.js
+~/.pi/agent/npm/node_modules/@postman/postman-plugin/dist/pi-extension.js
+~/.pi/agent/npm/node_modules/context-mode/pi/index.js
+~/.pi/agent/npm/node_modules/@dietrichgebert/ponytail/pi-extension/index.js
+~/.pi/agent/npm/node_modules/@juicesharp/rpiv-todo/index.ts
+~/.pi/agent/npm/node_modules/pi-lens/dist/index.js
+~/.pi/agent/npm/node_modules/pi-memory/index.ts
+~/.pi/agent/npm/node_modules/pi-simplify/dist/index.js
+~/.pi/agent/npm/node_modules/pi-subagents/bundle/index.js

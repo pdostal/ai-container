@@ -22,6 +22,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom network arguments](#custom-network-arguments)
   - [Terminal integration](#terminal-integration)
+  - [Print-mode pi](#print-mode-pi)
   - [Custom entrypoint](#custom-entrypoint)
 - [Configuration file](#configuration-file)
 - [What the launcher does](#what-the-launcher-does)
@@ -202,13 +203,15 @@ The launcher automatically:
 - Mounts `~/.ssh/known_hosts` read-only, and read-write `~/.agents`,
   `~/.claude`, `~/.claude.json`, `~/.config/opencode`,
   `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`,
-  `~/.pi/agent`, `~/.pi-lens` and the pi transpile caches under
+  `~/.pi/agent`, `~/.pi-lens`, `~/.context-mode` and the `$TMPDIR` caches under
   `~/.cache/tmp` (all skippable with `--disable-mount` / `disable_mounts`).
-  The cache mounts are what keep pi's startup at a few seconds: pi loads every
+  The cache mount is what keeps pi's startup at a few seconds: pi loads every
   extension through jiti, which Babel-transforms it once and caches the result
   in `$TMPDIR`, and `$TMPDIR` lives in the container's own filesystem, which
-  `--rm` throws away. Without them each start re-transpiles everything
-  (~57s on a slow host; ~4s with the cache warm).
+  `--rm` throws away. `~/.cache/tmp` is mounted whole because Node's compile
+  cache (`NODE_COMPILE_CACHE`), pi-subagents' state and pyright's
+  `pyright-<pid>-<random>` cache directory all live there too. Without it each
+  start re-transpiles everything (~57s on a slow host; ~4s with the cache warm).
 - Sets up [Vertex AI](#vertex-ai) from three host variables.
 - Forwards the provider keys `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GEMINI_API_KEY` and `OPENROUTER_API_KEY` by name when set on the host
@@ -269,7 +272,9 @@ box, and keeps completed "Thinking..." markers out of the transcript while
 showing a blue "Thinking..." at the start of the footer stats line during
 reasoning. The same spot shows `Working...` while a tool is running. To silence
 pi's version-update notice as well, add `PI_SKIP_VERSION_CHECK=1` to
-`extra_envs` (or pass `--extra-env PI_SKIP_VERSION_CHECK=1`).
+`extra_envs` (or pass `--extra-env PI_SKIP_VERSION_CHECK=1`). It also seeds
+`~/.pi/print-mode-extensions` for [`pi-print`](#print-mode-pi) if it doesn't
+exist yet (never overwriting edits).
 
 `--init` can't be combined with an assistant shortcut, `--entrypoint`, `--shell`
 or `--server`.
@@ -585,6 +590,34 @@ the alternate screen and other modes that a crashed TUI could leave enabled.
 
 Mouse reporting itself remains application-controlled.
 
+### Print-mode pi
+
+pi imports every extension it discovers before the first token, sequentially, so
+the full set costs ~3.8s of a ~4.2s startup. For one-shot (`-p`) runs most of
+that is wasted: usage and quota status bars, the powerline footer, plan-mode UI
+and the interactive overlay only ever draw a TUI that print mode never renders.
+`pi-print` is a thin wrapper that runs pi with `--no-extensions` plus a curated
+list, which brings startup to ~2s:
+
+```bash
+# inside the container
+pi-print "summarize this repo"      # -p is added when no mode flag is given
+pi-print --model openai/gpt-5 "hi"  # any other pi argument is forwarded
+
+# from the host: pi isn't the default entrypoint, so ask for the wrapper
+ai-container --entrypoint pi-print -- "summarize this repo"
+```
+
+The list lives in `~/.pi/print-mode-extensions` (seeded by
+`ai-container init`, falls back to the image copy when absent): one path,
+`~/`-relative path or `builtin:<name>` per line, `#` comments, and entries that
+don't exist are skipped so a package you never installed can't break the run.
+Edit it to taste -- dropping `pi-lens` (642ms) and `pi-subagents` (404ms) saves
+another second at the cost of LSP navigation and subagent delegation. Set
+`PI_PRINT_EXTENSIONS` to point at a different list, or to an empty file for a
+bare `--no-extensions` start (~0.4s). Passing `-e`/`--extension` or
+`--no-extensions` yourself disables the trimming for that run.
+
 ### Custom entrypoint
 
 You can specify a custom entrypoint using the `--entrypoint` flag:
@@ -789,7 +822,7 @@ client config at `host.container.internal:<port>`.
 - **Security**: gpg2, openssh-clients, gitleaks, SkillSpector
 - **Utilities**: bat, less, cnf, command-not-found
 - **OBS/OSC**: osc, obs-service-*, osc-plugin-qam
-- **AI Coding Assistants**: Claude Code, OpenCode, Codex, GitHub Copilot CLI, pi
+- **AI Coding Assistants**: Claude Code, OpenCode, Codex, GitHub Copilot CLI, pi (plus `pi-print` for one-shot runs)
 
 ## Agent Skills
 

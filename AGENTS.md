@@ -49,6 +49,7 @@ src/ai_container/
   runner.py      final argv assembly + subprocess execution + `stty sane` cleanup
   rich_patches.py  strips typer's Rich help/error box borders while keeping color (see its docstring)
 tests/           one test module per src module, plus tests/test_cli.py for end-to-end CLI behavior
+                 and tests/test_pi_print.py for the pi/print.sh wrapper (stub `pi` on $PATH)
 scripts/
   check_hardcoded_config.py  AST-based guard against hardcoded secret/config-shaped constants
 ```

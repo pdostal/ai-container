@@ -926,7 +926,7 @@ def _resolve_entrypoint(
 
 
 def _ensure_cache_paths(host_home: Path) -> None:
-    """Create the transpile-cache directories so their mounts can apply.
+    """Create the $TMPDIR cache directory so its mount can apply.
 
     They hold nothing but cache, so creating them on launch is safe. Skipping
     them (a missing source path drops the mount) costs a full re-transpile of

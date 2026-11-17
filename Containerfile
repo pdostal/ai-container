@@ -33,6 +33,14 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filt
     perl-Selenium-Remote-Driver chromedriver perl-TAP-Harness-JUnit perl-Pod-Markdown \
     perl-Test-Output perl-TAP-Harness-JUnit perl-Pod-Markdown perl-App-cpanminus \
     perl-Devel-Cover-Report-Codecovbash
+# The October 2026 TLS fixes (NSS 3.131.1 roots, compromised eMudhra CA dropped)
+# start at nodejs26 26.12.1, and Tumbleweed still ships 26.12.0, which makes
+# Plannotator warn on every pi start. Take the devel repo's 26.13.1: npm26 pins
+# nodejs26 to its exact version, so both move together. The gate catches a
+# downgrade; the ABI (libnode.so.147) is unchanged, so compiled modules still load.
+RUN zypper -n ar --no-gpgcheck --refresh --priority 90 https://download.opensuse.org/repositories/devel:/languages:/nodejs/openSUSE_Tumbleweed/ devel:languages:nodejs \
+    && zypper -n in --allow-vendor-change --from devel:languages:nodejs nodejs26 npm26 \
+    && node -e 'const [a, b, c] = process.versions.node.split(".").map(Number); if (a === 26 && (b < 12 || (b === 12 && c < 1))) throw new Error(`node ${process.versions.node} lacks the October 2026 TLS fixes`);'
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
@@ -52,15 +60,18 @@ RUN mkdir -p /etc/ssh/ssh_config.d
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 COPY --chmod=755 init.sh /usr/local/bin/init.sh
 COPY --chmod=755 opencode/launch.sh /usr/local/bin/opencode-launch
+COPY --chmod=755 pi/print.sh /usr/local/bin/pi-print
+COPY --chmod=644 pi/print-mode-extensions /usr/local/share/pi/print-mode-extensions
 COPY --chmod=644 pi/compact-messages.js /usr/local/share/pi/extensions/compact-messages.js
 COPY --chmod=644 pi/skillspector.js /usr/local/share/pi/extensions/skillspector.js
+COPY --chmod=755 scripts/patch_pi_mcp_adapter.py /usr/local/bin/pi-mcp-adapter-static-import
 COPY skillspector/plugin.js /usr/local/share/skillspector/opencode/plugins/skillspector.js
 COPY skillspector/skillspector.md /usr/local/share/skillspector/opencode/commands/skillspector.md
 COPY opencode/rtk-v2.js /usr/local/share/opencode/rtk-v2.js
 COPY opencode/caveman-v2.js /usr/local/share/opencode/caveman-v2.js
 RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
-# Mount targets for the host-side jiti / node compile caches.
-RUN mkdir -p /home/coder/.cache/tmp/jiti /home/coder/.cache/tmp/node-compile-cache
+# Mount target for the host-side $TMPDIR cache directory.
+RUN mkdir -p /home/coder/.cache/tmp
 RUN chown -R coder:$(id -gn coder) /home/coder
 RUN export GOBIN=/usr/local/bin && \
     go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
@@ -68,12 +79,22 @@ RUN rm -rf /tmp/opencode /tmp/.bun-0-*.so /tmp/node-compile-cache
 WORKDIR /home/coder
 USER coder
 ENV PATH="/home/coder/.local/bin:${PATH}"
-# jiti (pi's extension loader) keeps its transpile cache in $TMPDIR/jiti and
-# Node its module-compile cache next to it. A fresh container's filesystem is
-# thrown away on exit, so the launcher bind-mounts those two directories from
-# the host (see PI_CACHE_MOUNTS in src/ai_container/defaults.py): otherwise pi
+# Everything per-start perf depends on lives under $TMPDIR: jiti (pi's extension
+# loader) keeps its transpile cache there, Node its module-compile cache, and
+# pi-subagents and pyright their state. A fresh container's filesystem is thrown
+# away on exit, so the launcher bind-mounts the whole directory from the host
+# (see PI_CACHE_MOUNTS in src/ai_container/defaults.py): otherwise pi
 # re-transpiles every extension on every start (~57s instead of ~4s).
+# NODE_COMPILE_CACHE is what makes the compile-cache half of that work -- without
+# it Node caches nothing there, and pi's ~3.8s of extension imports is V8
+# compiling ~10MB of bundles. Worth ~0.5s per start, for every Node tool in here.
 ENV TMPDIR=/home/coder/.cache/tmp
+ENV NODE_COMPILE_CACHE=/home/coder/.cache/tmp/node-compile-cache
+# pi's powerline footer falls back to ASCII icons ("dir" instead of a folder
+# glyph) unless this is set: it infers Nerd Font support from TERM_PROGRAM/TERM,
+# and here TERM=xterm-256color with no TERM_PROGRAM never matches. It cannot come
+# from a shell rc file either -- pi is started by podman-init, not by a shell.
+ENV POWERLINE_NERD_FONTS=1
 # Pi runs npm installs as coder under ~/.pi/agent/npm; give that user the same
 # allowlist so native modules such as node-pty compile instead of being skipped.
 RUN npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user

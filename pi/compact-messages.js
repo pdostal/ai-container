@@ -10,13 +10,13 @@
  *
  * Thinking: with hidden thinking blocks enabled, pi writes a "Thinking..."
  * marker into the transcript for every completed reasoning run. Remove those
- * markers and show a blue "Thinking..." at the start of the footer stats line
- * only while the model is currently reasoning. The reasoning itself remains
+ * markers and show a random emoji from BUSY_EMOJIS at the start of the footer
+ * stats line while the model is reasoning. The reasoning itself remains
  * available via Ctrl+T.
  *
- * Running tools: show "Working..." at the start of the same footer stats line
- * while a tool call is executing, so long-running commands are visible without
- * scrolling the transcript.
+ * Running tools: keep that same emoji indicator up while a tool call executes,
+ * re-rolling it every BUSY_TICK_MS, so long-running commands are visible
+ * without scrolling the transcript.
  *
  * The spacing changes are runtime patches because pi 1.5.x has no
  * vertical-spacing setting. They fail closed if pi's internals change.
@@ -32,6 +32,11 @@ const FOOTER_PATCHED = Symbol.for("ai-container.compact-footer");
 const THINKING_STATUS = "ai-container-thinking";
 const TOOL_STATUS = "ai-container-tool";
 const INLINE_STATUS_KEYS = [THINKING_STATUS, TOOL_STATUS];
+// Shown while the agent is busy (reasoning or running a tool), re-rolled on
+// every tick. Only TOOL_STATUS is ever set: the footer patch below joins the
+// inline keys with a space, so filling both would render two emojis.
+const BUSY_EMOJIS = ["🧠", "🍺", "🍕", "🚆", "🛠️", "🔨", "🐣", "🚗", "🚀"];
+const BUSY_TICK_MS = 900;
 
 function isThinkingMessage(message) {
     if (message?.role !== "assistant" || !Array.isArray(message.content)) {
@@ -148,34 +153,92 @@ export default async function (pi) {
     let thinking = false;
     const activeTools = new Set();
     let toolContext;
+    let ticker;
+    let emoji;
+
+    const isBusy = () => thinking || activeTools.size > 0;
+
+    const rollEmoji = () => {
+        if (BUSY_EMOJIS.length < 2) {
+            return BUSY_EMOJIS[0];
+        }
+        let next;
+        do {
+            next = BUSY_EMOJIS[Math.floor(Math.random() * BUSY_EMOJIS.length)];
+        } while (next === emoji);
+        return next;
+    };
+
+    const stopTicker = () => {
+        if (ticker !== undefined) {
+            clearInterval(ticker);
+            ticker = undefined;
+        }
+    };
+
+    const startTicker = (ctx) => {
+        if (ticker !== undefined) {
+            return;
+        }
+        ticker = setInterval(() => {
+            if (!isBusy()) {
+                stopTicker();
+                return;
+            }
+            emoji = rollEmoji();
+            try {
+                ctx.ui.setStatus(TOOL_STATUS, emoji);
+            } catch {
+                // The UI can be torn down mid-shutdown; drop the timer instead
+                // of throwing from inside a callback.
+                stopTicker();
+            }
+        }, BUSY_TICK_MS);
+    };
+
+    // Recompute the indicator after a state change. Only transitions act:
+    // re-rolling on every message_update would flicker mid-reasoning.
+    const syncBusy = (ctx) => {
+        if (ctx) {
+            toolContext = ctx;
+        }
+        const target = ctx ?? toolContext;
+        if (!target?.ui) {
+            return;
+        }
+        if (isBusy()) {
+            emoji = rollEmoji();
+            target.ui.setStatus(TOOL_STATUS, emoji);
+            startTicker(target);
+        } else {
+            stopTicker();
+            emoji = undefined;
+            toolContext = undefined;
+            target.ui.setStatus(TOOL_STATUS, undefined);
+        }
+    };
 
     const setThinking = (ctx, next) => {
         if (next === thinking) {
             return;
         }
         thinking = next;
-        ctx.ui.setStatus(
-            THINKING_STATUS,
-            next ? ctx.ui.theme.fg("accent", "Thinking...") : undefined,
-        );
+        syncBusy(ctx);
     };
 
     const updateToolStatus = (ctx) => {
-        toolContext = ctx;
-        ctx.ui.setStatus(
-            TOOL_STATUS,
-            activeTools.size > 0 ? ctx.ui.theme.fg("accent", "Working...") : undefined,
-        );
-        if (activeTools.size === 0) {
-            toolContext = undefined;
-        }
+        syncBusy(ctx);
     };
 
     const clearToolStatus = (ctx) => {
         activeTools.clear();
+        thinking = false;
         const target = ctx ?? toolContext;
         toolContext = undefined;
-        target?.ui.setStatus(TOOL_STATUS, undefined);
+        stopTicker();
+        emoji = undefined;
+        target?.ui?.setStatus(TOOL_STATUS, undefined);
+        target?.ui?.setStatus(THINKING_STATUS, undefined);
     };
 
     pi.on("session_start", async (_event, ctx) => {

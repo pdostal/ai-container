@@ -56,6 +56,11 @@ if [ ! -e "$HOME/.pi/agent/extensions/compact-messages.js" ]; then
     install -Dm644 /usr/local/share/pi/extensions/compact-messages.js \
         "$HOME/.pi/agent/extensions/compact-messages.js"
 fi
+# Seeded so it can be edited; `pi-print` falls back to the image copy if absent.
+if [ ! -e "$HOME/.pi/print-mode-extensions" ]; then
+    install -Dm644 /usr/local/share/pi/print-mode-extensions \
+        "$HOME/.pi/print-mode-extensions"
+fi
 
 step "Repairing native npm modules"
 node_pty="$HOME/.pi/agent/npm/node_modules/node-pty"
@@ -68,6 +73,12 @@ if [ -d "$node_pty" ]; then
             printf 'warning: node-pty rebuild failed; Plannotator PTY features may be unavailable\n' >&2
         fi
     fi
+fi
+
+step "Patching pi-mcp-adapter's built-in MCP turn-off"
+adapter="$HOME/.pi/agent/npm/node_modules/pi-mcp-adapter/index.ts"
+if [ -f "$adapter" ] && pi-mcp-adapter-static-import "$adapter"; then
+    rm -rf "$HOME/.cache/tmp/jiti"
 fi
 
 step "Installing the SkillSpector extensions"
