@@ -201,8 +201,14 @@ The launcher automatically:
   `container`: via its built-in `--ssh` forwarding, macOS only).
 - Mounts `~/.ssh/known_hosts` read-only, and read-write `~/.agents`,
   `~/.claude`, `~/.claude.json`, `~/.config/opencode`,
-  `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`
-  and `~/.pi/agent` (all skippable with `--disable-mount` / `disable_mounts`).
+  `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`,
+  `~/.pi/agent`, `~/.pi-lens` and the pi transpile caches under
+  `~/.cache/tmp` (all skippable with `--disable-mount` / `disable_mounts`).
+  The cache mounts are what keep pi's startup at a few seconds: pi loads every
+  extension through jiti, which Babel-transforms it once and caches the result
+  in `$TMPDIR`, and `$TMPDIR` lives in the container's own filesystem, which
+  `--rm` throws away. Without them each start re-transpiles everything
+  (~57s on a slow host; ~4s with the cache warm).
 - Sets up [Vertex AI](#vertex-ai) from three host variables.
 - Forwards the provider keys `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GEMINI_API_KEY` and `OPENROUTER_API_KEY` by name when set on the host

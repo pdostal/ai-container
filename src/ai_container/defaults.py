@@ -14,6 +14,15 @@ ASSISTANT_ENTRYPOINTS = {
     "copilot": "/usr/local/bin/copilot",
     "pi": "/usr/bin/pi",
 }
+# pi loads every extension through jiti, which Babel-transforms it and caches the
+# result under $TMPDIR/jiti (the image points $TMPDIR at ~/.cache/tmp); Node's
+# module-compile cache lands next to it. A container filesystem is discarded on
+# exit, so without these two mounts every start re-transpiles every extension:
+# ~57s cold against ~4s once the cache survives a restart.
+PI_CACHE_MOUNTS = (
+    ".cache/tmp/jiti",
+    ".cache/tmp/node-compile-cache",
+)
 ASSISTANT_DIRECTORY_MOUNTS = (
     ".agents",
     ".claude",
@@ -24,6 +33,8 @@ ASSISTANT_DIRECTORY_MOUNTS = (
     ".local/state/opencode",
     ".cache/opencode",
     ".pi/agent",
+    ".pi-lens",
+    *PI_CACHE_MOUNTS,
 )
 ASSISTANT_FILE_MOUNTS = (".claude.json",)
 ASSISTANT_MOUNTS = (*ASSISTANT_DIRECTORY_MOUNTS, *ASSISTANT_FILE_MOUNTS)

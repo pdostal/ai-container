@@ -36,7 +36,7 @@
 # disable_envs = ["PUSHOVER_TOKEN"]
 
 # Host paths (directories or files) to bind-mount, on top of the built-in rw mounts of
-# ~/.agents, ~/.claude, ~/.claude.json, ~/.pi/agent and OpenCode's
+# ~/.agents, ~/.claude, ~/.claude.json, ~/.pi/agent, ~/.pi-lens and OpenCode's
 # config/data/state/cache: SOURCE[:TARGET][:ro|rw], rw by default.
 # Without TARGET, paths under $HOME map to the same place under /home/coder. Relative
 # SOURCEs resolve from the launch directory; missing ones are skipped. The CLI wins on

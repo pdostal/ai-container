@@ -20,6 +20,7 @@ first one it doesn't -- see the "Usage" section of README.md for examples.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import platform
 import re
@@ -679,6 +680,7 @@ def main(
     if credentials and mounts.is_disabled(credentials[0].host, disabled_mounts):
         reporter.debug_fail(f"Vertex credentials disabled: {credentials[0].host}")
         credentials = None
+    _ensure_cache_paths(host_home)
     default_mounts = [
         *defaults.assistant_mounts(host_home),
         *([credentials[0]] if credentials else []),
@@ -921,6 +923,19 @@ def _resolve_entrypoint(
     if server and default_agent not in {"opencode", "pi"}:
         raise CliError("--server supports only OpenCode and pi; use --pi or change default_agent.")
     return defaults.ASSISTANT_ENTRYPOINTS[default_agent]
+
+
+def _ensure_cache_paths(host_home: Path) -> None:
+    """Create the transpile-cache directories so their mounts can apply.
+
+    They hold nothing but cache, so creating them on launch is safe. Skipping
+    them (a missing source path drops the mount) costs a full re-transpile of
+    every pi extension on each start, so this must not depend on --init.
+    """
+    for relative in defaults.PI_CACHE_MOUNTS:
+        # Unwritable host: the mount is skipped and startup stays slow.
+        with contextlib.suppress(OSError):
+            (host_home / relative).mkdir(parents=True, exist_ok=True)
 
 
 def _initialize_assistant_paths(host_home: Path, reporter: Reporter) -> None:

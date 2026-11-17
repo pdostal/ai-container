@@ -724,6 +724,7 @@ def _make_assistant_paths(home: Path) -> None:
         ".config/opencode",
         ".local/share/opencode",
         ".pi/agent",
+        ".pi-lens",
     ):
         (home / d).mkdir(parents=True)
     (home / ".claude.json").write_text("{}")
@@ -744,9 +745,28 @@ def test_assistant_mounts_are_automatic_and_read_write(
         ".config/opencode",
         ".local/share/opencode",
         ".pi/agent",
+        ".pi-lens",
     ):
         assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
     assert not _mount_flags_targeting(argv, "/home/coder/.cache/opencode")  # missing on host
+
+
+def test_pi_transpile_cache_mounts_are_created_on_launch(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    """A plain launch must create and mount jiti's cache, without needing --init.
+
+    A missing host directory silently drops the mount, and pi then re-transpiles
+    every extension on every start (~57s instead of ~4s).
+    """
+    _make_assistant_paths(isolated_home)
+    for rel in defaults.PI_CACHE_MOUNTS:
+        assert not (isolated_home / rel).exists()
+    runner.invoke(cli_mod.app, ["--runtime", "podman"])
+    (argv,) = captured_run
+    for rel in defaults.PI_CACHE_MOUNTS:
+        assert (isolated_home / rel).is_dir()
+        assert f"{isolated_home}/{rel}:/home/coder/{rel}" in argv
 
 
 def test_assistant_mounts_can_be_disabled_and_config_overrides(

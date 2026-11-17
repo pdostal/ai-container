@@ -37,8 +37,8 @@ RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
     && npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user && npm install -g npm@latest \
-    && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp \
-    && test -x /usr/local/bin/opencode
+    && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp @tobilu/qmd \
+    && test -x /usr/local/bin/opencode && test -x /usr/local/bin/qmd
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
       group_name="$(getent group "${CODER_GID}" | cut -d: -f1)"; \
@@ -59,6 +59,8 @@ COPY skillspector/skillspector.md /usr/local/share/skillspector/opencode/command
 COPY opencode/rtk-v2.js /usr/local/share/opencode/rtk-v2.js
 COPY opencode/caveman-v2.js /usr/local/share/opencode/caveman-v2.js
 RUN chmod 644 /etc/ssh/ssh_config.d/99-ai-container.conf
+# Mount targets for the host-side jiti / node compile caches.
+RUN mkdir -p /home/coder/.cache/tmp/jiti /home/coder/.cache/tmp/node-compile-cache
 RUN chown -R coder:$(id -gn coder) /home/coder
 RUN export GOBIN=/usr/local/bin && \
     go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
@@ -66,6 +68,12 @@ RUN rm -rf /tmp/opencode /tmp/.bun-0-*.so /tmp/node-compile-cache
 WORKDIR /home/coder
 USER coder
 ENV PATH="/home/coder/.local/bin:${PATH}"
+# jiti (pi's extension loader) keeps its transpile cache in $TMPDIR/jiti and
+# Node its module-compile cache next to it. A fresh container's filesystem is
+# thrown away on exit, so the launcher bind-mounts those two directories from
+# the host (see PI_CACHE_MOUNTS in src/ai_container/defaults.py): otherwise pi
+# re-transpiles every extension on every start (~57s instead of ~4s).
+ENV TMPDIR=/home/coder/.cache/tmp
 # Pi runs npm installs as coder under ~/.pi/agent/npm; give that user the same
 # allowlist so native modules such as node-pty compile instead of being skipped.
 RUN npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user
