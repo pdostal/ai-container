@@ -257,7 +257,10 @@ assistant configuration, and SkillSpector's `/skillspector` command and
 `skillspector_scan` tool for OpenCode. It also enables pi's `quietStartup`
 setting (without overriding an existing value) to hide pi's startup header and
 installs a pi extension that reduces the gap between transcript messages to
-one blank line and removes the empty spacer above the input box. To silence
+one blank line, removes the empty spacer above the input box, and keeps
+completed "Thinking..." markers out of the transcript while showing a blue
+"Thinking..." at the start of the footer stats line during reasoning. The same
+spot shows `Working...` while a tool is running. To silence
 pi's version-update notice as well, add
 `PI_SKIP_VERSION_CHECK=1` to `extra_envs` (or pass
 `--extra-env PI_SKIP_VERSION_CHECK=1`).
