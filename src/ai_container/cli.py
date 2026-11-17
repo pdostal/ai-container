@@ -84,18 +84,7 @@ CONTAINER_TERMINFO = Path("/run/host-terminfo")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
 INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
-DEFAULT_OPENCODE_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["opencode"]
-DEFAULT_CLAUDE_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["claude"]
-DEFAULT_CODEX_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["codex"]
-DEFAULT_COPILOT_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["copilot"]
 DEFAULT_PI_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["pi"]
-BUNDLED_ASSISTANT_ENTRYPOINTS = (
-    DEFAULT_OPENCODE_ENTRYPOINT,
-    DEFAULT_CLAUDE_ENTRYPOINT,
-    DEFAULT_CODEX_ENTRYPOINT,
-    DEFAULT_COPILOT_ENTRYPOINT,
-    DEFAULT_PI_ENTRYPOINT,
-)
 SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "shell", "help"})
 
 
@@ -374,7 +363,7 @@ def main(
         codex = assistant == "codex"
         copilot = assistant == "copilot"
         pi = assistant == "pi"
-    if tool_args and tool_args[0] in SUBCOMMANDS:
+    if tool_args and tool_args[0] in SUBCOMMANDS and len(tool_args) > len(after_dash):
         subcommand = tool_args.pop(0)
         if subcommand == "help":
             typer.echo(ctx.get_help())
@@ -834,10 +823,9 @@ def main(
         reporter=reporter,
         workspace=active_workspace.name if active_workspace else None,
     )
-    if debug or resolved_entrypoint not in BUNDLED_ASSISTANT_ENTRYPOINTS:
-        reporter.step(f"Using entrypoint: {resolved_entrypoint}")
-    if tool_args:
-        reporter.step(f"Passing params: {' '.join(tool_args)}")
+    entrypoint_name = Path(resolved_entrypoint).name
+    reporter.step(f"Running {shlex.join([entrypoint_name, *tool_args])}")
+    reporter.debug_detail(f"Entrypoint: {resolved_entrypoint}")
 
     if forwarding.needs_relay_chmod:
         spawn_relay_chmod_fix(selected_engine, container_name)

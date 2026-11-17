@@ -49,6 +49,7 @@ RUN mkdir -p /etc/ssh/ssh_config.d
 COPY 99-ai-container.conf /etc/ssh/ssh_config.d/99-ai-container.conf
 COPY --chmod=755 init.sh /usr/local/bin/init.sh
 COPY --chmod=755 opencode/launch.sh /usr/local/bin/opencode-launch
+COPY --chmod=644 pi/compact-messages.js /usr/local/share/pi/extensions/compact-messages.js
 COPY skillspector/plugin.js /usr/local/share/skillspector/opencode/plugins/skillspector.js
 COPY skillspector/skillspector.md /usr/local/share/skillspector/opencode/commands/skillspector.md
 COPY opencode/rtk-v2.js /usr/local/share/opencode/rtk-v2.js

@@ -158,9 +158,10 @@ flag (the flag spellings keep working):
 | `ai-container help` | `-h`/`--help` | Show the launcher help. |
 
 Because subcommands are read from the first positional token, a literal
-`init`, `server`, `attach`, `continue`, `list`, `shell`, or `help` cannot be
-forwarded to the entrypoint. Use `--entrypoint opencode help` when you need
-OpenCode's own help.
+`init`, `server`, `attach`, `continue`, `list`, `shell`, or `help` before `--`
+is interpreted as a launcher subcommand. Put it after `--` to forward it to the
+entrypoint, e.g. `ai-container pi -- help`. `ai-container --entrypoint opencode
+help` also works when you need OpenCode's own help.
 
 This is a deliberate (and arguably improved) departure from the old bash
 script's parsing, which stopped recognizing its own flags entirely as soon as
@@ -253,7 +254,13 @@ leaving every existing path untouched, then runs [`init.sh`](init.sh) inside
 the container. Its changes persist through the default mounts. Initialization
 installs the OpenQA, openSUSE packaging, and frontend design skills, Caveman, the RTK and Graphify
 assistant configuration, and SkillSpector's `/skillspector` command and
-`skillspector_scan` tool for OpenCode.
+`skillspector_scan` tool for OpenCode. It also enables pi's `quietStartup`
+setting (without overriding an existing value) to hide pi's startup header and
+installs a pi extension that reduces the gap between transcript messages to
+one blank line and removes the empty spacer above the input box. To silence
+pi's version-update notice as well, add
+`PI_SKIP_VERSION_CHECK=1` to `extra_envs` (or pass
+`--extra-env PI_SKIP_VERSION_CHECK=1`).
 
 `--init` can't be combined with an assistant shortcut, `--entrypoint`, `--shell`
 or `--server`.

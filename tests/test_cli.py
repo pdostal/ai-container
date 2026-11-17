@@ -554,6 +554,47 @@ def test_double_dash_after_assistant_subcommand_still_forwards_literal(
     assert argv[-1] == "--debug"
 
 
+def test_double_dash_keeps_subcommand_name_literal(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    """A subcommand name after `--` is tool input, not a launcher subcommand."""
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "pi", "--", "help"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "/usr/bin/pi" in argv
+    assert argv[-1] == "help"
+    assert "Usage:" not in result.output
+
+
+def test_double_dash_keeps_subcommand_name_literal_without_assistant(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "--", "help"])
+    assert result.exit_code == 0, result.output
+    (argv,) = captured_run
+    assert "/usr/local/bin/opencode-launch" in argv
+    assert argv[-1] == "help"
+    assert "Usage:" not in result.output
+
+
+def test_running_line_shows_entrypoint_and_args(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "pi", "--", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Running pi --help" in result.output
+    assert "Passing params:" not in result.output
+
+
+def test_running_line_always_names_bundled_entrypoint(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "pi"])
+    assert result.exit_code == 0, result.output
+    assert "Running pi" in result.output
+    assert "Using entrypoint:" not in result.output
+
+
 def test_explicit_assistant_flag_wins_over_subcommand_name(
     isolated_home: Path, workdir: Path, fake_engine_path: Path, captured_run: list[list[str]]
 ) -> None:

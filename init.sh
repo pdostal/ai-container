@@ -37,6 +37,22 @@ step "Configuring Graphify"
 graphify install --platform=claude
 graphify install --platform=opencode
 
+step "Configuring pi"
+mkdir -p "$HOME/.pi/agent"
+pi_settings="$HOME/.pi/agent/settings.json"
+if [ ! -e "$pi_settings" ]; then
+    printf '{\n  "quietStartup": true\n}\n' > "$pi_settings"
+elif ! jq -e '.quietStartup != null' "$pi_settings" >/dev/null; then
+    tmp="$(mktemp)"
+    jq '.quietStartup = true' "$pi_settings" > "$tmp"
+    chmod --reference="$pi_settings" "$tmp"
+    mv "$tmp" "$pi_settings"
+fi
+if [ ! -e "$HOME/.pi/agent/extensions/compact-messages.js" ]; then
+    install -Dm644 /usr/local/share/pi/extensions/compact-messages.js \
+        "$HOME/.pi/agent/extensions/compact-messages.js"
+fi
+
 step "Installing the SkillSpector OpenCode extension"
 for file in /usr/local/share/skillspector/opencode/commands/skillspector.md /usr/local/share/skillspector/opencode/plugins/skillspector.js; do
     target="$HOME/.config/opencode/${file#/usr/local/share/skillspector/opencode/}"

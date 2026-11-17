@@ -144,7 +144,7 @@ def test_fix_relay_permissions_waits_for_relay_socket(
     fp: FakeProcess, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
-    command = ["container", "exec", "-u", "root", "ai-abc", "sh", "-c", fp.any()]
+    command: list[Any] = ["container", "exec", "-u", "root", "ai-abc", "sh", "-c", fp.any()]
     fp.register(command, returncode=1)
     fp.register(command, returncode=1)
     fp.register(command, returncode=0)
