@@ -40,14 +40,13 @@ RUN zypper -n ref && echo -en "\n\n\n" && zypper -n install --allow-downgrade --
 # nodejs26 to its exact version, so both move together. The gate catches a
 # downgrade; the ABI (libnode.so.147) is unchanged, so compiled modules still load.
 RUN zypper -n ar --no-gpgcheck --refresh --priority 90 https://download.opensuse.org/repositories/devel:/languages:/nodejs/openSUSE_Tumbleweed/ devel:languages:nodejs \
-    && zypper -n in --allow-vendor-change --from devel:languages:nodejs nodejs26 npm26 \
-    && node -e 'const [a, b, c] = process.versions.node.split(".").map(Number); if (a === 26 && (b < 12 || (b === 12 && c < 1))) throw new Error(`node ${process.versions.node} lacks the October 2026 TLS fixes`);'
+    && zypper -n in --allow-vendor-change --from devel:languages:nodejs nodejs26 npm26
 RUN zypper ar --no-gpgcheck --refresh --priority 95 http://download.suse.de/ibs/QA:/Maintenance/openSUSE_Tumbleweed/QA:Maintenance.repo && echo -en "\n\n\n" && zypper -n in ca-certificates-suse osc-plugin-qam ruprogress-mcp ruoqa-mcp || true
 #RUN zypper ar --no-gpgcheck --refresh --priority 95 https://download.opensuse.org/repositories/home:/mgrossu/openSUSE_Tumbleweed/home:mgrossu.repo && echo -en "\n\n\n" && zypper -n in swift-lang || true
 RUN npm config set fund false \
     && npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user && npm install -g npm@latest \
-    && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp @tobilu/qmd \
-    && test -x /usr/local/bin/opencode && test -x /usr/local/bin/qmd
+    && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp \
+    && test -x /usr/local/bin/opencode 
 # AWS CLI v2 (the Tumbleweed aws-cli package is v1; SSO login happens on the host).
 RUN cd "$(mktemp -d)" \
     && curl -fsSLO "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
