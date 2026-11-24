@@ -7,7 +7,7 @@ ARG NPM_ALLOW_SCRIPTS=protobufjs,core-js,@opencode/cli,msgpackr-extract,node-pty
 RUN zypper -n ref && echo -en "\n\n\n" && zypper -n install --allow-downgrade --allow-arch-change --allow-vendor-change \
     git-core git-lfs git-filter-repo spec-cleaner rpmlint osc tilth bugwarden \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy python314-flake8 python314-yamllint kubernetes-client \
-    golangci-lint python313-gitlint aws-cli azure-cli perl-Mojolicious perl-Test-Exception jq yq \
+    golangci-lint python313-gitlint azure-cli perl-Mojolicious perl-Test-Exception jq yq \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep npm26 \
     clang-tools make gcc-c++ python3 ruby taplo php8 os-autoinst-distri-opensuse-deps nodejs26 bat knot knot-utils chromium \
     php8-ctype php8-curl php8-dom php8-fileinfo php8-gd skillspector skillspector-mcp os-autoinst-devel python314-ruff iputils \
@@ -48,6 +48,15 @@ RUN npm config set fund false \
     && npm config set allow-scripts="${NPM_ALLOW_SCRIPTS}" --location=user && npm install -g npm@latest \
     && npm install -g markdownlint-cli openrtk @opencode/cli pyright typescript @github/copilot @playwright/mcp @tobilu/qmd \
     && test -x /usr/local/bin/opencode && test -x /usr/local/bin/qmd
+# AWS CLI v2 (the Tumbleweed aws-cli package is v1; SSO login happens on the host).
+RUN cd "$(mktemp -d)" \
+    && curl -fsSLO "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
+    && unzip -q awscli-exe-linux-*.zip \
+    && ./aws/install -i /usr/local/aws-cli -b /usr/local/bin \
+    && aws --version | grep -q '^aws-cli/2\.'
+# SUSE bedrock toolkit, pinned to the version the QE SLE guide verified.
+RUN curl -fsSL https://raw.githubusercontent.com/SUSE/bedrock-toolkit/main/install.sh | VERSION=v1.3.0 INSTALL_DIR=/usr/local/bin sh -s -- bedrock \
+    && bedrock --version
 # Reuse an existing group when CODER_GID already exists in the base image.
 RUN if getent group "${CODER_GID}" >/dev/null; then \
       group_name="$(getent group "${CODER_GID}" | cut -d: -f1)"; \

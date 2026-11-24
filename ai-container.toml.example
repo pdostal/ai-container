@@ -41,7 +41,7 @@
 # Without TARGET, paths under $HOME map to the same place under /home/coder. Relative
 # SOURCEs resolve from the launch directory; missing ones are skipped. The CLI wins on
 # target clashes and over disable_mounts. Default: []. Flag: --extra-mount / -m.
-# extra_mounts = ["~/.claude", "~/.claude.json", "~/.config/gh:ro", "~/src:/opt/src:ro"]
+# extra_mounts = ["~/.claude", "~/.claude.json", "~/.config/gh:ro", "~/.aws", "~/src:/opt/src:ro"]
 
 # Absolute host paths; any config or built-in mount (and ~/.ssh/known_hosts) at or below
 # one is skipped. CLI --extra-mount entries are never filtered. Default: []. Flag: --disable-mount.

@@ -529,6 +529,15 @@ reuses the refreshed cache through the mount. The profile needs
 permanent setup, add `extra_mounts = ["~/.aws"]` to the
 [configuration file](#configuration-file).
 
+The image ships AWS CLI v2 and the SUSE `bedrock` toolkit, so `bedrock doctor`,
+`bedrock models` and `bedrock usage` work inside the container. For the
+QE SLE account, run `aws configure sso` and `bedrock setup --id eiqesle` once on
+the host (the `bedrock` profile then assumes your budgeted personal role), and
+pick a model ID from `bedrock models`. Prefer an `eu.` prefix, such as
+`amazon-bedrock/eu.anthropic.claude-sonnet-5-5`; `global.` models may be
+processed outside the EU. See the
+[QE SLE Bedrock guide](https://gitlab.suse.de/qa/qe-sle-bedrock-docs).
+
 ### Custom /etc/hosts entries
 
 Add static `/etc/hosts` entries inside the container, podman and docker
