@@ -4,7 +4,8 @@ ARG CODER_GID=1000
 # Native install scripts npm 12 is allowed to run. Pi installs packages as the
 # coder user, so this list is applied to both root and coder below.
 ARG NPM_ALLOW_SCRIPTS=protobufjs,core-js,@opencode/cli,msgpackr-extract,node-pty,@ast-grep/cli,tree-sitter-bash,pi-memory
-RUN zypper -n ref && echo -en "\n\n\n" && zypper -n in git-core git-lfs git-filter-repo spec-cleaner rpmlint osc tilth bugwarden \
+RUN zypper -n ref && echo -en "\n\n\n" && zypper -n install --allow-downgrade --allow-arch-change --allow-vendor-change \
+    git-core git-lfs git-filter-repo spec-cleaner rpmlint osc tilth bugwarden \
     python314 python314-pip python314-pipx python314-uv perl perl-Perl-Tidy python314-flake8 python314-yamllint kubernetes-client \
     golangci-lint python313-gitlint aws-cli azure-cli perl-Mojolicious perl-Test-Exception jq yq \
     perl-Test-Fatal perl-Test-MockModule perl-Test-MockObject perl-Test-Warnings expect go1.27 cargo rust unzip ripgrep npm26 \
