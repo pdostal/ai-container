@@ -125,28 +125,38 @@ def label_args(cwd: Path) -> list[str]:
     return ["--label", f"{WORKDIR_LABEL}={cwd}"]
 
 
+def _ps_names(engine: Engine, filters: list[str]) -> list[str]:
+    result = subprocess.run(
+        [engine.value, "ps", *filters, "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.split() if result.returncode == 0 else []
+
+
 def find_running(engine: Engine, cwd: Path, *, service: bool = False) -> str | None:
     """Newest running container launched from ``cwd`` (None if none, or on
     `container`, which has no label filter).
     """
     if engine is Engine.CONTAINER:
         return None
-    result = subprocess.run(
+    names = _ps_names(
+        engine,
         [
-            engine.value,
-            "ps",
             "--filter",
             f"label={WORKDIR_LABEL}={cwd}",
             *(["--filter", "label=ai-container.opencode-server=true"] if service else []),
-            "--format",
-            "{{.Names}}",
         ],
-        capture_output=True,
-        text=True,
-        check=False,
     )
-    names = result.stdout.split() if result.returncode == 0 else []
     return names[0] if names else None
+
+
+def find_all_running(engine: Engine, cwd: Path) -> list[str]:
+    """Every running container launched from ``cwd`` (empty on `container`)."""
+    if engine is Engine.CONTAINER:
+        return []
+    return _ps_names(engine, ["--filter", f"label={WORKDIR_LABEL}={cwd}"])
 
 
 def published_port(engine: Engine, name: str, port: int) -> int:

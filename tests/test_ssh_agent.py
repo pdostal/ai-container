@@ -49,10 +49,25 @@ def test_podman_mounts_socket_and_sets_env(
         selinux_enabled=False,
         reporter=Reporter(),
     )
-    target = CONTAINER_HOME / ".ssh/agent/ssh-agent.sock"
-    assert result.args == [f"--mount=type=bind,source={real_socket},target={target}"]
+    target = ssh_agent.AGENT_DIR / "agent.sock"
+    assert result.args == [
+        f"--mount=type=bind,source={real_socket.parent},target={ssh_agent.AGENT_DIR}"
+    ]
     assert result.env == {"SSH_AUTH_SOCK": str(target)}
     assert result.needs_relay_chmod is False
+
+
+def test_root_level_socket_falls_back_to_file_mount(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ssh_agent, "_socket_available", lambda: "/agent.sock")
+    result = ssh_agent.configure(
+        engine=Engine.PODMAN,
+        container_home=CONTAINER_HOME,
+        selinux_enabled=False,
+        reporter=Reporter(),
+    )
+    target = CONTAINER_HOME / ".ssh/agent/agent.sock"
+    assert result.args == [f"--mount=type=bind,source=/agent.sock,target={target}"]
+    assert result.env == {"SSH_AUTH_SOCK": str(target)}
 
 
 def test_podman_mount_gets_selinux_suffix(
@@ -91,8 +106,10 @@ def test_docker_linux_mounts_host_socket_without_selinux_suffix(
         selinux_enabled=False,
         reporter=Reporter(),
     )
-    target = CONTAINER_HOME / ".ssh/agent/ssh-agent.sock"
-    assert result.args == [f"--mount=type=bind,source={real_socket},target={target}"]
+    target = ssh_agent.AGENT_DIR / "agent.sock"
+    assert result.args == [
+        f"--mount=type=bind,source={real_socket.parent},target={ssh_agent.AGENT_DIR}"
+    ]
     assert result.env == {"SSH_AUTH_SOCK": str(target)}
 
 

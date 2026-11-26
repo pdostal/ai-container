@@ -1300,12 +1300,12 @@ def test_interactive_terminal_is_forwarded(
     monkeypatch.setenv("TERM", "xterm-kitty")
     monkeypatch.setenv("COLORTERM", "truecolor")
     runner.invoke(cli_mod.app, ["--runtime", "podman"])
-    (argv,) = captured_run
-    assert "-it" in argv
-    assert "TERM=xterm-kitty" in argv
-    assert "COLORTERM=truecolor" in argv
-    assert "TERMINFO_DIRS=/run/host-terminfo:" in argv
-    assert f"--mount=type=bind,source={terminfo},target=/run/host-terminfo,readonly" in argv
+    start, attach = captured_run
+    assert "-it" in attach
+    assert "TERM=xterm-kitty" in attach
+    assert "COLORTERM=truecolor" in attach
+    assert "TERMINFO_DIRS=/run/host-terminfo:" in start
+    assert f"--mount=type=bind,source={terminfo},target=/run/host-terminfo,readonly" in start
 
 
 def test_dumb_terminal_runs_without_tty(
@@ -1469,7 +1469,11 @@ def test_ssh_agent_forwarded_by_default(
 ) -> None:
     runner.invoke(cli_mod.app, ["--runtime", runtime])
     (argv,) = captured_run
-    assert ("--ssh" in argv) if runtime == "container" else any(str(agent) in a for a in argv)
+    if runtime == "container":
+        assert "--ssh" in argv
+    else:
+        assert any(f"source={agent.parent}" in a for a in argv)
+        assert f"SSH_AUTH_SOCK=/run/ssh-agent/{agent.name}" in argv
 
 
 @pytest.mark.parametrize("runtime", ["podman", "container"])
@@ -1493,7 +1497,10 @@ def test_ssh_agent_disabled_by_config_and_flag_overrides(
     captured_run.clear()
     runner.invoke(cli_mod.app, ["--runtime", runtime, "--ssh-agent"])
     (argv,) = captured_run
-    assert ("--ssh" in argv) if runtime == "container" else any(str(agent) in a for a in argv)
+    if runtime == "container":
+        assert "--ssh" in argv
+    else:
+        assert any(f"source={agent.parent}" in a for a in argv)
     assert bool(relay) == (runtime == "container")
 
 
@@ -1937,6 +1944,106 @@ def test_server_subcommand_uses_detached_server(
     (argv,) = captured_run
     assert "-d" in argv
     assert "0.0.0.0:5050:4996" in argv
+
+
+def test_default_starts_detached_server_then_attaches(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(terminal, "should_allocate_tty", lambda **_kwargs: True)
+    fp.register(["hostname", "-I"], stdout="192.168.1.2\n")
+    for arg in ("--git-common-dir", "--git-dir"):
+        fp.register(
+            ["git", "-C", str(workdir), "rev-parse", "--path-format=absolute", arg], stdout=""
+        )
+    fp.register(
+        [
+            "podman",
+            "ps",
+            "--filter",
+            f"label={engine_ops.WORKDIR_LABEL}={workdir}",
+            "--filter",
+            "label=ai-container.opencode-server=true",
+            "--format",
+            "{{.Names}}",
+        ],
+        stdout="",
+    )
+    result = runner.invoke(
+        cli_mod.app, ["--runtime", "podman", "--server-port", "5051", "--", "--resume"]
+    )
+    assert result.exit_code == 0, result.output
+    start, attach = captured_run
+    assert "-d" in start
+    assert "0.0.0.0:5051:4996" in start
+    assert start[start.index("--entrypoint") + 1] == "/usr/local/bin/opencode"
+    assert "serve" in start
+    assert "-it" not in start
+    assert "--resume" not in start
+    assert attach[:2] == ["podman", "exec"]
+    assert "AI_CONTAINER_OPENCODE_ATTACH=true" in attach
+    assert attach[-1] == "--resume"
+
+
+def _register_stop(fp: FakeProcess, workdir: Path, stdout: str) -> list[str]:
+    ps = [
+        "podman",
+        "ps",
+        "--filter",
+        f"label={engine_ops.WORKDIR_LABEL}={workdir}",
+        "--format",
+        "{{.Names}}",
+    ]
+    fp.register(ps, stdout=stdout)
+    return ps
+
+
+def test_stop_removes_directory_containers(
+    isolated_home: Path,
+    workdir: Path,
+    fake_engine_path: Path,
+    captured_run: list[list[str]],
+    fp: FakeProcess,
+) -> None:
+    _register_stop(fp, workdir, "ai-a\nai-b\n")
+    fp.register(["podman", "rm", "-f", "ai-a"], returncode=0)
+    fp.register(["podman", "rm", "-f", "ai-b"], returncode=0)
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "stop"])
+    assert result.exit_code == 0, result.output
+    assert "Stopped ai-a" in result.output
+    assert "Stopped ai-b" in result.output
+    assert not captured_run
+
+
+def test_stop_without_containers_notes(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, fp: FakeProcess
+) -> None:
+    _register_stop(fp, workdir, "")
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "stop"])
+    assert result.exit_code == 0, result.output
+    assert "No container running" in result.output
+
+
+def test_stop_failure_is_reported(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path, fp: FakeProcess
+) -> None:
+    _register_stop(fp, workdir, "ai-a\n")
+    fp.register(["podman", "rm", "-f", "ai-a"], returncode=1, stderr="boom")
+    result = runner.invoke(cli_mod.app, ["--runtime", "podman", "stop"])
+    assert result.exit_code == 1
+    assert "Cannot stop ai-a: boom" in result.output
+
+
+def test_stop_unsupported_on_container_engine(
+    isolated_home: Path, workdir: Path, fake_engine_path: Path
+) -> None:
+    result = runner.invoke(cli_mod.app, ["--runtime", "container", "stop"])
+    assert result.exit_code == 1
+    assert "Stopping is not supported" in result.output
 
 
 def test_pi_server_uses_socat_tcp_bridge(

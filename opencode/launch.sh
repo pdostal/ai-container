@@ -31,4 +31,9 @@ if [ "$ready" = false ]; then
     printf 'OpenCode server did not become ready. See %s\n' "$log" >&2
     exit 1
 fi
+# The agent socket is a mount, so it can outlive the host agent that created it.
+if [ -n "${SSH_AUTH_SOCK:-}" ] && ! ssh-add -L >/dev/null 2>&1; then
+    printf 'SSH agent unavailable; continuing without it\n' >&2
+    sleep 3
+fi
 "$command" --server "$url" "$@"

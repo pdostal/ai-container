@@ -219,6 +219,15 @@ def test_find_running_unsupported_on_container(tmp_path: Path) -> None:
     assert engine.find_running(Engine.CONTAINER, tmp_path) is None
 
 
+def test_find_all_running_returns_every_name(fp: FakeProcess, tmp_path: Path) -> None:
+    fp.register(_ps(tmp_path), stdout="ai-new\nai-old\n")
+    assert engine.find_all_running(Engine.PODMAN, tmp_path) == ["ai-new", "ai-old"]
+
+
+def test_find_all_running_unsupported_on_container(tmp_path: Path) -> None:
+    assert engine.find_all_running(Engine.CONTAINER, tmp_path) == []
+
+
 @pytest.mark.parametrize("output", ["", "invalid", "0.0.0.0:not-a-port\n"])
 def test_published_port_rejects_invalid_output(fp: FakeProcess, output: str) -> None:
     fp.register(["podman", "port", "ai-server", "4996/tcp"], stdout=output)

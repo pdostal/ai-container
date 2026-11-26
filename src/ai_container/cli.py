@@ -86,7 +86,7 @@ _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SHELL_ENTRYPOINT = "/bin/bash"
 INIT_ENTRYPOINT = "/usr/local/bin/init.sh"
 DEFAULT_PI_ENTRYPOINT = defaults.ASSISTANT_ENTRYPOINTS["pi"]
-SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "shell", "help"})
+SUBCOMMANDS = frozenset({"init", "server", "attach", "continue", "list", "stop", "shell", "help"})
 
 
 class CliError(Exception):
@@ -162,6 +162,10 @@ def main(
             help="List running ai-container containers (name, workdir, command, port, password).",
         ),
     ] = False,
+    stop_mode: Annotated[
+        bool,
+        typer.Option("--stop", help="Stop this directory's running container(s)."),
+    ] = False,
     show_secrets: Annotated[
         bool,
         typer.Option("--show-secrets", help="With --list, print the full server password."),
@@ -179,7 +183,7 @@ def main(
         bool | None,
         typer.Option(
             "--attach/--no-attach",
-            help="Attach to an existing directory's OpenCode server, or force a fresh container.",
+            help="Attach to an existing directory's OpenCode server, or start a fresh one.",
         ),
     ] = None,
     server_username: Annotated[
@@ -317,6 +321,8 @@ def main(
 
         ai-container list
 
+        ai-container stop
+
         ai-container shell
 
         ai-container --claude --resume
@@ -337,8 +343,8 @@ def main(
 
         ai-container --claude -- --debug
 
-    [dim]Subcommands (init, server, attach, continue, list, shell, help, plus the
-    assistant names pi, opencode, claude, codex and copilot) are sugar for the
+    [dim]Subcommands (init, server, attach, continue, list, stop, shell, help, plus
+    the assistant names pi, opencode, claude, codex and copilot) are sugar for the
     matching flag; the flag spellings keep working. Put a forwarded token after
     "--" to keep it literal, as in the last example, which sends "--debug" to
     Claude Code instead of enabling this launcher's own --debug output.[/dim]
@@ -380,6 +386,8 @@ def main(
             tool_args.insert(0, "--continue")
         elif subcommand == "list":
             list_mode = True
+        elif subcommand == "stop":
+            stop_mode = True
         elif subcommand == "shell":
             shell = True
 
@@ -437,6 +445,8 @@ def main(
             host_platform=host_platform,
         )
         engine_ops.ensure_available(selected_engine)
+        if stop_mode:
+            raise typer.Exit(_stop_containers(selected_engine, Path.cwd(), reporter))
         if list_mode:
             _list_containers(selected_engine, show_secrets=show_secrets)
             raise typer.Exit()
@@ -549,6 +559,12 @@ def main(
         }
     ) or any(arg.split("=", 1)[0] in {"--server", "--standalone"} for arg in tool_args)
     network_server = opencode_entrypoint and not passthrough
+    attach_tui = (
+        network_server
+        and interactive
+        and not server_mode
+        and selected_engine is not Engine.CONTAINER
+    )
     if server_mode and passthrough:
         reporter.fail("--server cannot forward service commands, --server, or --standalone.")
         raise typer.Exit(1)
@@ -579,33 +595,20 @@ def main(
             )
             if server_mode:
                 raise typer.Exit(0)
-            exec_argv = build_exec_argv(
-                engine=selected_engine,
-                name=existing,
-                command="/usr/local/bin/opencode-launch",
-                tool_args=tool_args,
-                tty_args=[
-                    "-w",
-                    str(target_workdir),
-                    "-e",
-                    "AI_CONTAINER_OPENCODE_ATTACH=true",
-                    "-e",
-                    f"AI_CONTAINER_OPENCODE_PORT={server.CONTAINER_PORT}",
-                    "-e",
-                    f"AI_CONTAINER_OPENCODE_COMMAND={resolved_entrypoint}",
-                    *(["-e", f"OPENCODE_PASSWORD={server_password}"] if server_password else []),
-                    *(
-                        item
-                        for name in ("TERM", "COLORTERM")
-                        if (value := os.environ.get(name))
-                        for item in ("-e", f"{name}={value}")
-                    ),
-                    *(engine_ops.tty_args(selected_engine) if interactive else ["-i"]),
-                ],
+            raise typer.Exit(
+                _attach_server(
+                    engine=selected_engine,
+                    name=existing,
+                    target_workdir=target_workdir,
+                    entrypoint=resolved_entrypoint,
+                    tool_args=tool_args,
+                    interactive=interactive,
+                    password=server_password,
+                    debug_runtime=debug_runtime,
+                    reporter=reporter,
+                    terminal_title=terminal_title,
+                )
             )
-            if debug_runtime:
-                reporter.step(f"Running: {_safe_command(exec_argv)}")
-            raise typer.Exit(run(exec_argv, terminal_title=terminal_title))
         if attach is True:
             raise CliError(
                 "No OpenCode server running for this directory; "
@@ -760,6 +763,9 @@ def main(
             reporter.debug_fail(f"{name} not set")
 
     run_entrypoint = resolved_entrypoint
+    startup_password: str | None = server_password
+    detached = server_mode or attach_tui
+    container_args = tool_args
     if pi_server and pi_port is not None:
         pi_cmd = shlex.join([DEFAULT_PI_ENTRYPOINT, "--mode", "rpc", *tool_args])
         listen = f"TCP-LISTEN:{server.CONTAINER_PORT},reuseaddr,fork"
@@ -777,6 +783,7 @@ def main(
             f"{', '.join(server.urls(server.host_ips(host_platform), pi_port))}"
         )
         tool_args = ["-c", f"exec {shlex.join(['/usr/bin/socat', listen, f'SYSTEM:{pi_cmd}'])}"]
+        container_args = tool_args
         run_entrypoint = "/bin/sh"
 
     if network_server and server_port is not None:
@@ -792,9 +799,10 @@ def main(
             f"{server_config.username}:{server_config.password}@{', '.join(server_config.urls)}"
         )
         args.extend(["--label", f"{server.SERVICE_LABEL}=true", *server_config.args[1:]])
-        if server_mode:
+        if detached:
             args.append("-d")
-            tool_args = server_config.tool_args
+            container_args = server_config.tool_args
+            startup_password = server_config.password
         else:
             args.extend(
                 [
@@ -804,9 +812,9 @@ def main(
                     f"AI_CONTAINER_OPENCODE_COMMAND={resolved_entrypoint}",
                 ]
             )
-    if not server_mode and interactive:
+    if not detached and interactive:
         args.extend(engine_ops.tty_args(selected_engine))
-    elif not server_mode:
+    elif not detached:
         args.append("-i")
         reporter.debug_detail("\u25cb No TTY detected; running without -t")
 
@@ -826,7 +834,7 @@ def main(
         workspace=active_workspace.name if active_workspace else None,
     )
     entrypoint_name = Path(resolved_entrypoint).name
-    reporter.step(f"Running {shlex.join([entrypoint_name, *tool_args])}")
+    reporter.step(f"Running {shlex.join([entrypoint_name, *container_args])}")
     reporter.debug_detail(f"Entrypoint: {resolved_entrypoint}")
 
     if forwarding.needs_relay_chmod:
@@ -836,15 +844,100 @@ def main(
         engine=selected_engine,
         engine_debug_args=engine_debug_args,
         entrypoint="/usr/local/bin/opencode-launch"
-        if network_server and not server_mode
+        if network_server and not detached
         else run_entrypoint,
         args=args,
         image=image,
-        tool_args=tool_args,
+        tool_args=container_args,
     )
     if debug_runtime:
         reporter.step(f"Running: {_safe_command(argv)}")
-    raise typer.Exit(run(argv, terminal_title=terminal_title))
+    if not attach_tui:
+        raise typer.Exit(run(argv, terminal_title=terminal_title))
+    exit_code = run(argv)
+    if exit_code:
+        raise typer.Exit(exit_code)
+    raise typer.Exit(
+        _attach_server(
+            engine=selected_engine,
+            name=container_name,
+            target_workdir=target_workdir,
+            entrypoint=resolved_entrypoint,
+            tool_args=tool_args,
+            interactive=interactive,
+            password=startup_password,
+            debug_runtime=debug_runtime,
+            reporter=reporter,
+            terminal_title=terminal_title,
+        )
+    )
+
+
+def _attach_server(
+    *,
+    engine: Engine,
+    name: str,
+    target_workdir: Path,
+    entrypoint: str,
+    tool_args: list[str],
+    interactive: bool,
+    password: str | None,
+    debug_runtime: bool,
+    reporter: Reporter,
+    terminal_title: str | None,
+) -> int:
+    """Run the OpenCode TUI in an exec against the container's long-lived server."""
+    exec_argv = build_exec_argv(
+        engine=engine,
+        name=name,
+        command="/usr/local/bin/opencode-launch",
+        tool_args=tool_args,
+        tty_args=[
+            "-w",
+            str(target_workdir),
+            "-e",
+            "AI_CONTAINER_OPENCODE_ATTACH=true",
+            "-e",
+            f"AI_CONTAINER_OPENCODE_PORT={server.CONTAINER_PORT}",
+            "-e",
+            f"AI_CONTAINER_OPENCODE_COMMAND={entrypoint}",
+            *(["-e", f"OPENCODE_PASSWORD={password}"] if password else []),
+            *(
+                item
+                for env_name in ("TERM", "COLORTERM")
+                if (value := os.environ.get(env_name))
+                for item in ("-e", f"{env_name}={value}")
+            ),
+            *(engine_ops.tty_args(engine) if interactive else ["-i"]),
+        ],
+    )
+    if debug_runtime:
+        reporter.step(f"Running: {_safe_command(exec_argv)}")
+    return run(exec_argv, terminal_title=terminal_title)
+
+
+def _stop_containers(engine: Engine, cwd: Path, reporter: Reporter) -> int:
+    """Force-remove every running container launched from ``cwd``."""
+    if engine is Engine.CONTAINER:
+        reporter.fail(
+            "Stopping is not supported on the Apple `container` engine; use podman or docker."
+        )
+        return 1
+    names = engine_ops.find_all_running(engine, cwd)
+    if not names:
+        reporter.note(f"No container running for {cwd}")
+        return 0
+    failed = 0
+    for name in names:
+        result = subprocess.run(
+            [engine.value, "rm", "-f", name], capture_output=True, text=True, check=False
+        )
+        if result.returncode:
+            reporter.fail(f"Cannot stop {name}: {result.stderr.strip()}")
+            failed = 1
+        else:
+            reporter.ok(f"Stopped {name}")
+    return failed
 
 
 def _list_containers(engine: Engine, *, show_secrets: bool) -> None:

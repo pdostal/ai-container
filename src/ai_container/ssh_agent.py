@@ -12,6 +12,8 @@ from . import selinux
 from .console import Reporter
 from .models import Engine
 
+AGENT_DIR = Path("/run/ssh-agent")
+
 
 @dataclass(frozen=True, slots=True)
 class SshForwarding:
@@ -47,18 +49,23 @@ def configure(
         return SshForwarding(args=[], env={}, needs_relay_chmod=False)
 
     if sock:
-        source, target = sock, container_home / ".ssh/agent/ssh-agent.sock"
+        host = Path(sock)
         if engine is Engine.DOCKER and host_platform == "Darwin":
             # Docker Desktop can't mount the host socket; it offers a relay at this path.
-            source, target = (
-                "/run/host-services/ssh-auth.sock",
-                Path("/run/host-services/ssh-auth.sock"),
-            )
+            source = mount_target = target = Path("/run/host-services/ssh-auth.sock")
+        elif host.parent != Path("/"):
+            # Mount the socket's directory so an agent that recreates the socket
+            # in place (keyring, systemd user socket) still works after a reattach.
+            source, mount_target = host.parent, AGENT_DIR
+            target = AGENT_DIR / host.name
+        else:
+            source = host
+            mount_target = target = container_home / ".ssh/agent" / host.name
         reporter.debug_ok(f"Mounting SSH agent socket (bind-mount, rw): {source}")
         reporter.debug_detail(f"Setting SSH_AUTH_SOCK={target}")
         suffix = selinux.bind_suffix(selinux_enabled)
         return SshForwarding(
-            args=[f"--mount=type=bind,source={source},target={target}{suffix}"],
+            args=[f"--mount=type=bind,source={source},target={mount_target}{suffix}"],
             env={"SSH_AUTH_SOCK": str(target)},
             needs_relay_chmod=False,
         )

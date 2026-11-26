@@ -155,13 +155,14 @@ flag (the flag spellings keep working):
 | `ai-container attach` | `--attach` | Require an existing server for this directory. |
 | `ai-container continue` | forwarding `--continue` | Resume the assistant's last session. |
 | `ai-container list` | `--list` | List running containers. |
+| `ai-container stop` | `--stop` | Stop this directory's running container(s). |
 | `ai-container shell` | `--shell` | Open a bash shell, attaching to this directory's container if one runs. |
 | `ai-container help` | `-h`/`--help` | Show the launcher help. |
 
 Because subcommands are read from the first positional token, a literal
-`init`, `server`, `attach`, `continue`, `list`, `shell`, or `help` before `--`
-is interpreted as a launcher subcommand. Put it after `--` to forward it to the
-entrypoint, e.g. `ai-container pi -- help`. `ai-container --entrypoint opencode
+`init`, `server`, `attach`, `continue`, `list`, `stop`, `shell`, or `help` before
+`--` is interpreted as a launcher subcommand. Put it after `--` to forward it to
+the entrypoint, e.g. `ai-container pi -- help`. `ai-container --entrypoint opencode
 help` also works when you need OpenCode's own help.
 
 This is a deliberate (and arguably improved) departure from the old bash
@@ -197,9 +198,10 @@ The launcher automatically:
 - Configures SELinux labels when needed (podman/Linux: `:z`/`:Z` mount labels;
   docker: `--security-opt label=disable`, so host files are never relabeled).
 - Forwards SSH agent for git operations unless disabled with `--no-ssh-agent` /
-  `ssh_agent = false` (podman and docker: Linux only, by mounting the socket;
-  Docker Desktop on macOS: via its `/run/host-services/ssh-auth.sock` relay;
-  `container`: via its built-in `--ssh` forwarding, macOS only).
+  `ssh_agent = false` (podman and docker: Linux only, by mounting the socket's
+  directory; Docker Desktop on macOS: via its
+  `/run/host-services/ssh-auth.sock` relay; `container`: via its built-in
+  `--ssh` forwarding, macOS only).
 - Mounts `~/.ssh/known_hosts` read-only, and read-write `~/.agents`,
   `~/.claude`, `~/.claude.json`, `~/.config/opencode`,
   `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`,
@@ -247,7 +249,15 @@ The launcher automatically:
 > per-container relay socket (via `container exec -u root`, retried for up to
 > 2s while the container boots). This only loosens the ephemeral, per-container
 > copy of the socket living in that container's own private VM, not your real
-> host `ssh-agent` socket.
+> host agent socket.
+>
+> The agent socket's whole directory is bind-mounted (podman/docker) rather than
+> the single socket, so an agent that recreates its socket in place (keyring,
+> systemd user socket, 1Password) keeps working across reattaches. Before the TUI
+> starts, the launch script runs `ssh-add -L`; if the agent no longer answers it
+> prints a warning, waits 3s and continues without it. An agent that recreated
+> its socket in a *different* directory needs `ai-container stop` and a fresh
+> launch.
 
 ### Initialize assistant state
 
@@ -281,7 +291,10 @@ or `--server`.
 
 ### Server mode
 
-OpenCode starts a network server by default, including when you use the TUI.
+OpenCode runs as a background HTTP server in a detached container, and the
+launcher attaches a TUI to it. Closing the TUI leaves the server and your
+session running, so running `ai-container` again from the same directory
+reconnects to it.
 The server binds to `0.0.0.0` inside the container and is published on all host
 interfaces. The container port is `4996`, and the launcher publishes it on host
 port `4996` too, so inside and outside match. If `4996` is occupied, it walks up
@@ -303,27 +316,31 @@ engine reports that a port became occupied.
 On podman/docker, another launch from the same directory attaches to its
 existing server. Only containers with the OpenCode server label are reused;
 a shell or another assistant's container is not a server. Reuse keeps the
-existing container's mounts, environment, and credentials. Use `--no-attach`
-to apply changed launch settings in a fresh container.
+existing container's mounts, environment, and credentials, so a changed
+`--extra-mount`, `--extra-env` or image only applies to a new server. Stop the
+old one with `ai-container stop` and relaunch.
 
 ```bash
 ai-container                    # start a server and TUI, or attach to this directory's server
 ai-container attach             # require an existing server; fail if none exists
-ai-container --no-attach        # fresh server and TUI on an available port
+ai-container server             # start a detached server without a TUI
+ai-container stop               # stop this directory's container(s)
+ai-container --no-attach        # fresh server on an available port, then attach
 ```
 
-A foreground container ends when its initial TUI exits. Clients attached to
-that server then disconnect. For a server that survives TUI exit, use:
+Closing an attached TUI does not stop the detached server; the session stays
+alive until you stop it:
 
 ```bash
-ai-container server
+ai-container stop                 # removes every launcher container for this directory
+podman rm -f CONTAINER            # or docker rm -f, using the printed name
 ```
 
-The container runs detached. Repeating `--server` reuses an existing server for
-the directory. Closing an attached TUI does not stop a detached server. Server
-mode supports OpenCode (HTTP) and pi (`--server --pi`, JSONL RPC over TCP).
-Stop and remove a detached container with `podman rm -f CONTAINER` (or
-`docker rm -f CONTAINER`), using the name printed on startup.
+Apple's `container` engine has no label filter for reuse, so there every launch
+stays in the foreground and ends with its TUI. Non-interactive runs (no TTY)
+also stay in the foreground, so a one-shot `ai-container -- run "..."` leaves no
+server behind. Server mode supports OpenCode (HTTP) and pi (`--server --pi`,
+JSONL RPC over TCP).
 
 OpenCode V2 fixes the HTTP basic auth username to `opencode`; other values fail.
 The default password comes from the host's `~/.config/opencode/service.json`,
@@ -360,7 +377,7 @@ Additional server options:
 | `--server-username USER` | `opencode` | HTTP basic auth username (only `opencode` is supported) |
 | `--password PASS`, `--server-password PASS` | *(service config, otherwise random)* | HTTP basic auth password |
 | `--attach` | *(automatic reuse)* | Require a server for this directory |
-| `--no-attach` | *(off)* | Skip reuse; start a fresh network server |
+| `--no-attach` | *(off)* | Skip reuse; start a fresh network server, then attach |
 
 #### pi RPC server
 
@@ -386,14 +403,16 @@ launcher's socat bridge it only works in a foreground process.
 started by the launcher:
 
 ```text
-ai-x7q - /home/coder/project - /usr/local/bin/opencode-launch --continue - 4996 - ****
+ai-x7q - /home/coder/project - opencode serve --hostname 0.0.0.0 --port 4996 - 4996 - ****
 ```
 
 Fields are container name, workdir, executed command (entrypoint plus args),
 published host port, and server password. Unknown values are shown as `-`.
 Passwords are masked; add `--show-secrets` to print the real value. The list is
 sorted by workdir. Apple's `container` engine has no label filter, so `list`
-reports that it is unsupported there.
+reports that it is unsupported there. Each directory keeps its own server until
+`ai-container stop` (or `podman rm -f`) removes it, so `list` grows over time if
+you work in many checkouts.
 
 ### Multiple containers
 
