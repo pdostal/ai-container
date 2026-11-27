@@ -21,6 +21,7 @@ CLI that drives Podman, Docker, or Apple's `container` tool.
   - [AWS Bedrock](#aws-bedrock)
   - [Custom /etc/hosts entries](#custom-etchosts-entries)
   - [Custom network arguments](#custom-network-arguments)
+  - [Shell](#shell)
   - [Terminal integration](#terminal-integration)
   - [Print-mode pi](#print-mode-pi)
   - [Custom entrypoint](#custom-entrypoint)
